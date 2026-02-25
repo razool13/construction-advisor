@@ -125,6 +125,8 @@ const todayStr = () => new Date().toISOString().split("T")[0];
 const clamp = (v, mn, mx) => Math.max(mn, Math.min(mx, v));
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+const GOOGLE_CLIENT_ID = ""; // Paste your Google OAuth 2.0 Client ID here
+
 const stColors = { pending: "#94a3b8", active: "#f59e0b", done: "#22c55e", delayed: "#ef4444" };
 const stLabels = { pending: "טרם התחיל", active: "בביצוע", done: "הושלם", delayed: "מעוכב" };
 const docStColors = { "חדש": "#3b82f6", "בטיפול": "#f59e0b", "הושלם": "#22c55e", "לבירור": "#ef4444" };
@@ -174,8 +176,10 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
   const [importStatus, setImportStatus] = useState("");
   const fileRef = useRef(null);
 
-  // Google Drive state
-  const [scriptUrl, setScriptUrl] = useState(() => localStorage.getItem("drive-script-url") || "");
+  // Google Drive state (token in sessionStorage so it survives panel close/reopen within same session)
+  const [gToken, setGToken] = useState(() => sessionStorage.getItem("drive-token") || "");
+  const [gUser, setGUser] = useState(() => localStorage.getItem("drive-user") || "");
+  const [driveFiles, setDriveFiles] = useState([]);
   const [driveStatus, setDriveStatus] = useState("");
   const [loadingDrive, setLoadingDrive] = useState(false);
 
@@ -196,19 +200,143 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
     return t;
   };
 
+  /* ─── GIS helpers ─── */
+  const loadGIS = () => new Promise((resolve) => {
+    if (window.google?.accounts?.oauth2) { resolve(); return; }
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.onload = resolve;
+    document.head.appendChild(s);
+  });
+
+  const getOrCreateFolder = async (token) => {
+    const folderName = "גיבויי פרויקט בנייה";
+    const q = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`, {
+      headers: { Authorization: "Bearer " + token },
+    });
+    const data = await r.json();
+    if (data.files?.length > 0) return data.files[0].id;
+    const cr = await fetch("https://www.googleapis.com/drive/v3/files", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder" }),
+    });
+    const fd = await cr.json();
+    return fd.id;
+  };
+
+  const loadDriveFiles = async (token) => {
+    setLoadingDrive(true);
+    try {
+      const folderId = await getOrCreateFolder(token);
+      const q = `'${folderId}' in parents and name contains 'גיבוי_' and trashed=false`;
+      const r = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&orderBy=createdTime+desc&pageSize=10&fields=files(id,name,createdTime)`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      const data = await r.json();
+      setDriveFiles(data.files || []);
+    } catch (e) { setDriveStatus("❌ " + e.message); }
+    setLoadingDrive(false);
+  };
+
+  const signIn = async () => {
+    if (!GOOGLE_CLIENT_ID) { setDriveStatus("❌ Client ID לא מוגדר בקוד"); return; }
+    setDriveStatus("⏳ טוען...");
+    try {
+      await loadGIS();
+      setDriveStatus("");
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: "https://www.googleapis.com/auth/drive.file",
+        callback: async (response) => {
+          if (response.error) { setDriveStatus("❌ " + response.error); return; }
+          const token = response.access_token;
+          sessionStorage.setItem("drive-token", token);
+          setGToken(token);
+          try {
+            const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+              headers: { Authorization: "Bearer " + token },
+            });
+            const u = await r.json();
+            const email = u.email || "מחובר";
+            localStorage.setItem("drive-user", email);
+            setGUser(email);
+          } catch {}
+          setDriveStatus("");
+          loadDriveFiles(token);
+        },
+      });
+      client.requestAccessToken();
+    } catch (e) { setDriveStatus("❌ " + e.message); }
+  };
+
+  const signOut = () => {
+    try { if (gToken) window.google?.accounts?.oauth2?.revoke(gToken, () => {}); } catch {}
+    sessionStorage.removeItem("drive-token");
+    localStorage.removeItem("drive-user");
+    setGToken(""); setGUser(""); setDriveFiles([]); setDriveStatus("");
+  };
+
   const saveToDrive = async () => {
-    if (!scriptUrl) return;
+    if (!gToken) return;
     setLoadingDrive(true); setDriveStatus("⏳ שומר ב-Drive...");
     try {
+      const folderId = await getOrCreateFolder(gToken);
       const ts = new Date();
       const dateStr = ts.toLocaleDateString("he-IL").replace(/\./g, "-");
       const timeStr = ts.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }).replace(":", "-");
       const stamp = `${dateStr}_${timeStr}`;
-      const data = { version: 2, exportDate: ts.toISOString(), knowledgeBase, phases, contractors, documents, projectStart };
-      await fetch(scriptUrl, { method: "POST", body: JSON.stringify({ filename: `גיבוי_${stamp}.json`, content: JSON.stringify(data, null, 2) }) });
-      await fetch(scriptUrl, { method: "POST", body: JSON.stringify({ filename: `סיכום_${stamp}.txt`, content: buildSummaryText() }) });
+      const backup = { version: 2, exportDate: ts.toISOString(), knowledgeBase, phases, contractors, documents, projectStart };
+      const uploadFile = async (name, content, mimeType) => {
+        const form = new FormData();
+        form.append("metadata", new Blob([JSON.stringify({ name, parents: [folderId] })], { type: "application/json" }));
+        form.append("file", new Blob([content], { type: mimeType }));
+        return fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + gToken },
+          body: form,
+        });
+      };
+      await uploadFile(`גיבוי_${stamp}.json`, JSON.stringify(backup, null, 2), "application/json");
+      await uploadFile(`סיכום_${stamp}.txt`, buildSummaryText(), "text/plain");
       setDriveStatus("✅ נשמר ב-Drive!");
-    } catch (e) { setDriveStatus("❌ שגיאה: " + e.message); }
+      loadDriveFiles(gToken);
+    } catch (e) { setDriveStatus("❌ " + e.message); }
+    setLoadingDrive(false);
+  };
+
+  const restoreFromDrive = async (fileId) => {
+    if (!window.confirm("לשחזר גיבוי זה? הנתונים הנוכחיים יוחלפו.")) return;
+    setLoadingDrive(true); setDriveStatus("⏳ משחזר...");
+    try {
+      const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { Authorization: "Bearer " + gToken },
+      });
+      const data = await r.json();
+      if (!data.version) { setDriveStatus("❌ קובץ לא תקין"); setLoadingDrive(false); return; }
+      if (data.knowledgeBase?.length) setKnowledgeBase(data.knowledgeBase);
+      if (data.phases?.length) setPhases(data.phases);
+      if (data.contractors?.length) setContractors(data.contractors);
+      if (data.documents?.length) setDocuments(data.documents);
+      if (data.projectStart) setProjectStart(data.projectStart);
+      setDriveStatus("✅ שוחזר!");
+    } catch (e) { setDriveStatus("❌ " + e.message); }
+    setLoadingDrive(false);
+  };
+
+  const deleteDriveFile = async (fileId) => {
+    if (!window.confirm("למחוק גיבוי זה?")) return;
+    setLoadingDrive(true);
+    try {
+      await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + gToken },
+      });
+      setDriveFiles((p) => p.filter((f) => f.id !== fileId));
+      setDriveStatus("✅ נמחק");
+    } catch (e) { setDriveStatus("❌ " + e.message); }
     setLoadingDrive(false);
   };
 
@@ -268,36 +396,42 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
 
         {/* Google Drive Card */}
         <div style={{ background: "#f0f7ff", border: "1px solid #bfdbfe", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
-          <div style={{ fontSize: "13px", fontWeight: 700, color: "#1e40af", marginBottom: "8px" }}>☁️ Google Drive</div>
-          <div style={{ fontSize: "11.5px", color: "#374151", lineHeight: 1.7, marginBottom: "10px" }}>
-            1. פתח <a href="https://script.google.com" target="_blank" rel="noopener noreferrer" style={{ color: "#1a73e8" }}>script.google.com ↗</a> → פרויקט חדש<br />
-            2. מחק את הקוד הקיים והדבק:
-          </div>
-          <pre style={{ background: "#1e293b", color: "#e2e8f0", borderRadius: "8px", padding: "10px", fontSize: "10.5px", overflowX: "auto", marginBottom: "10px", direction: "ltr", textAlign: "left", whiteSpace: "pre-wrap" }}>{`function doPost(e) {
-  const p = JSON.parse(e.postData.contents);
-  const name = "גיבויי פרויקט בנייה";
-  const fl = DriveApp.getFoldersByName(name);
-  const folder = fl.hasNext() ? fl.next() : DriveApp.createFolder(name);
-  folder.createFile(p.filename, p.content, MimeType.PLAIN_TEXT);
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true }))
-    .setMimeType(ContentService.MimeType.JSON);
-}`}</pre>
-          <div style={{ fontSize: "11.5px", color: "#374151", lineHeight: 1.7, marginBottom: "10px" }}>
-            3. פרוס (Deploy) → Web app → Execute as: <b>Me</b> → Who has access: <b>Anyone</b><br />
-            4. העתק את ה-URL והדבק כאן:
-          </div>
-          <input
-            value={scriptUrl}
-            onChange={e => { setScriptUrl(e.target.value); localStorage.setItem("drive-script-url", e.target.value); }}
-            placeholder="https://script.google.com/macros/s/..."
-            style={{ ...INP, fontSize: "12px", direction: "ltr", marginBottom: "8px" }}
-          />
-          {scriptUrl && (
-            <button onClick={saveToDrive} disabled={loadingDrive} style={{ ...BTN("#4285f4"), opacity: loadingDrive ? 0.6 : 1 }}>
-              {loadingDrive ? "⏳ שומר..." : "☁️ שמור ב-Drive"}
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "#1e40af", marginBottom: "10px" }}>☁️ Google Drive</div>
+
+          {!gToken ? (
+            <button onClick={signIn} disabled={loadingDrive} style={{ ...BTN("#4285f4"), opacity: loadingDrive ? 0.6 : 1 }}>
+              🔐 התחבר עם Google
             </button>
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "10px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "12px", color: "#374151", fontWeight: 600 }}>✅ {gUser}</span>
+                <button onClick={saveToDrive} disabled={loadingDrive} style={{ ...BTN("#4285f4"), fontSize: "12px", padding: "6px 12px", opacity: loadingDrive ? 0.6 : 1 }}>
+                  {loadingDrive ? "⏳" : "☁️ שמור ב-Drive"}
+                </button>
+                <button onClick={() => loadDriveFiles(gToken)} disabled={loadingDrive} style={{ ...BTN("#f5f0eb", "#1a3a4a"), fontSize: "12px", padding: "6px 10px" }}>🔄</button>
+                <button onClick={signOut} style={{ ...BTN("#f0f0f0", "#555"), fontSize: "12px", padding: "6px 10px" }}>התנתק</button>
+              </div>
+              {driveFiles.length > 0 && (
+                <div>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#374151", marginBottom: "6px" }}>גיבויים אחרונים:</div>
+                  {driveFiles.map((f) => (
+                    <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #e5e7eb" }}>
+                      <span style={{ fontSize: "11px", color: "#374151", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingLeft: "8px" }}>{f.name}</span>
+                      <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                        <button onClick={() => restoreFromDrive(f.id)} disabled={loadingDrive} style={{ ...BTN("#f0faf5", "#16a34a"), fontSize: "11px", padding: "3px 8px" }}>שחזר</button>
+                        <button onClick={() => deleteDriveFile(f.id)} disabled={loadingDrive} style={{ ...BTN("#fee2e2", "#dc2626"), fontSize: "11px", padding: "3px 8px" }}>🗑️</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {driveFiles.length === 0 && !loadingDrive && (
+                <div style={{ fontSize: "12px", color: "#888" }}>אין גיבויים עדיין. לחץ "שמור ב-Drive" ליצירת הראשון.</div>
+              )}
+            </>
           )}
+
           {driveStatus && (
             <div style={{ fontSize: "12px", marginTop: "8px", fontWeight: 600, color: driveStatus.startsWith("✅") ? "#16a34a" : driveStatus.startsWith("⏳") ? "#1d4ed8" : "#dc2626" }}>
               {driveStatus}
@@ -364,7 +498,14 @@ function App() {
   const [viewDoc, setViewDoc] = useState(null);
   const [showBackup, setShowBackup] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("anthropic-api-key") || "");
+  const [settingsTab, setSettingsTab] = useState("anthropic");
+
+  // AI provider state
+  const [provider, setProvider] = useState(() => localStorage.getItem("ai-provider") || "anthropic");
+  const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem("anthropic-api-key") || "");
+  const [openaiKey, setOpenaiKey] = useState(() => localStorage.getItem("openai-api-key") || "");
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem("gemini-api-key") || "");
+  const activeKey = provider === "openai" ? openaiKey : provider === "gemini" ? geminiKey : anthropicKey;
 
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -449,6 +590,7 @@ function App() {
     const fullText = textParts.join("\n\n");
     const hasMedia = curAttach.some((a) => a.type === "image" || (a.type === "pdf" && a.data));
 
+    // Build Anthropic-format user content (used for Anthropic and as display reference)
     let userContent;
     if (hasMedia) {
       userContent = [];
@@ -470,29 +612,87 @@ function App() {
     setMessages([...newMsgs, { role: "assistant", content: "", loading: true }]);
     setInput(""); setAttachments([]); setLoading(true);
 
+    // Helper to extract text from potentially array apiContent
+    const extractText = (content) => {
+      if (typeof content === "string") return content;
+      if (Array.isArray(content)) return content.filter((b) => b.type === "text").map((b) => b.text).join("\n") || "";
+      return "";
+    };
+
     try {
-      const apiMsgs = [
-        ...messages.map((m) => ({ role: m.role, content: m.apiContent || m.displayText || m.content || "" })),
-        { role: "user", content: userContent },
-      ];
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 4000,
-          system: SYSTEM_PROMPT + buildCtx(),
-          messages: apiMsgs,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-        }),
-      });
-      const data = await resp.json();
-      const aText = data.content?.filter((b) => b.type === "text").map((b) => b.text).join("\n") || "שגיאה, נסה שוב.";
-      const usedSearch = data.content?.some((b) => b.type === "web_search_tool_result" || b.type === "server_tool_use");
+      let aText = "";
+      let usedSearch = false;
+
+      if (provider === "anthropic") {
+        const apiMsgs = [
+          ...messages.map((m) => ({ role: m.role, content: m.apiContent || m.displayText || m.content || "" })),
+          { role: "user", content: userContent },
+        ];
+        const resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514", max_tokens: 4000,
+            system: SYSTEM_PROMPT + buildCtx(),
+            messages: apiMsgs,
+            tools: [{ type: "web_search_20250305", name: "web_search" }],
+          }),
+        });
+        const data = await resp.json();
+        aText = data.content?.filter((b) => b.type === "text").map((b) => b.text).join("\n") || "שגיאה, נסה שוב.";
+        usedSearch = data.content?.some((b) => b.type === "web_search_tool_result" || b.type === "server_tool_use");
+
+      } else if (provider === "openai") {
+        // Build OpenAI-format current message content
+        const oaiUserContent = [];
+        curAttach.forEach((a) => {
+          if (a.type === "image") oaiUserContent.push({ type: "image_url", image_url: { url: `data:${a.mediaType};base64,${a.data}` } });
+        });
+        oaiUserContent.push({ type: "text", text: fullText || "נתח" });
+        const oaiMsgs = [
+          { role: "system", content: SYSTEM_PROMPT + buildCtx() },
+          ...messages.map((m) => ({
+            role: m.role,
+            content: extractText(m.apiContent) || m.displayText || m.content || "",
+          })),
+          { role: "user", content: oaiUserContent.length === 1 ? oaiUserContent[0].text : oaiUserContent },
+        ];
+        const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
+          body: JSON.stringify({ model: "gpt-4o", max_tokens: 4000, messages: oaiMsgs }),
+        });
+        const data = await resp.json();
+        aText = data.choices?.[0]?.message?.content || "שגיאה, נסה שוב.";
+
+      } else if (provider === "gemini") {
+        // Build Gemini-format contents
+        const geminiHistory = messages.map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: extractText(m.apiContent) || m.displayText || m.content || "" }],
+        }));
+        const currentParts = [];
+        curAttach.forEach((a) => {
+          if (a.type === "image") currentParts.push({ inlineData: { mimeType: a.mediaType, data: a.data } });
+        });
+        currentParts.push({ text: fullText || "נתח" });
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT + buildCtx() }] },
+            contents: [...geminiHistory, { role: "user", parts: currentParts }],
+          }),
+        });
+        const data = await resp.json();
+        aText = data.candidates?.[0]?.content?.parts?.[0]?.text || "שגיאה, נסה שוב.";
+      }
+
       const aMsg = { role: "assistant", content: aText, apiContent: aText, usedSearch };
       setMessages([...newMsgs, aMsg]);
 
@@ -512,7 +712,7 @@ function App() {
       setMessages([...newMsgs, { role: "assistant", content: "שגיאה בחיבור." }]);
     }
     setLoading(false);
-  }, [attachments, messages, buildCtx, setDocuments]);
+  }, [attachments, messages, buildCtx, setDocuments, provider, anthropicKey, openaiKey, geminiKey]);
 
   /* ─── Gantt ─── */
   const initPhases = useCallback(() => {
@@ -558,24 +758,80 @@ function App() {
       {showSettings && (
         <Overlay onClose={() => setShowSettings(false)}>
           <div style={{ padding: "16px 20px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>⚙️ הגדרות</span>
+            <span style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>⚙️ הגדרות AI</span>
             <button onClick={() => setShowSettings(false)} style={BTN("#f0f0f0", "#555")}>✕</button>
           </div>
+          {/* Provider tabs */}
+          <div style={{ display: "flex", borderBottom: "2px solid #eee", padding: "0 20px" }}>
+            {[
+              { id: "anthropic", label: "Anthropic" },
+              { id: "openai", label: "ChatGPT" },
+              { id: "gemini", label: "Gemini" },
+            ].map((p) => (
+              <button key={p.id} onClick={() => setSettingsTab(p.id)}
+                style={{
+                  flex: 1, padding: "10px 4px", border: "none", cursor: "pointer", fontFamily: "inherit",
+                  fontSize: "13px", fontWeight: settingsTab === p.id ? 700 : 400,
+                  color: settingsTab === p.id ? "#1a3a4a" : "#888",
+                  background: "transparent",
+                  borderBottom: settingsTab === p.id ? "2px solid #2d8a6e" : "2px solid transparent",
+                  marginBottom: "-2px",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                }}>
+                {p.label}
+                {provider === p.id && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#2d8a6e", display: "inline-block", flexShrink: 0 }} />}
+              </button>
+            ))}
+          </div>
           <div style={{ padding: "16px 20px" }}>
-            <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "4px" }}>🤖 Anthropic API Key</div>
-            <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "8px" }}>
-              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" style={{ color: "#2d8a6e" }}>קבל מפתח ב-console.anthropic.com ↗</a>
-            </div>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={e => { setApiKey(e.target.value); localStorage.setItem("anthropic-api-key", e.target.value); }}
-              placeholder="sk-ant-..."
-              style={{ ...INP, direction: "ltr", fontFamily: "monospace" }}
-            />
-            {apiKey
-              ? <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px", fontWeight: 600 }}>✅ מפתח מוגדר</div>
-              : <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "6px", fontWeight: 600 }}>❌ נדרש מפתח לשימוש ביועץ</div>}
+            {settingsTab === "anthropic" && (
+              <>
+                <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "8px" }}>
+                  🔑 API Key — <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" style={{ color: "#2d8a6e" }}>console.anthropic.com ↗</a>
+                </div>
+                <input type="password" value={anthropicKey}
+                  onChange={e => { setAnthropicKey(e.target.value); localStorage.setItem("anthropic-api-key", e.target.value); }}
+                  placeholder="sk-ant-..." style={{ ...INP, direction: "ltr", fontFamily: "monospace" }} />
+                {anthropicKey
+                  ? <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px", fontWeight: 600 }}>✅ מפתח מוגדר</div>
+                  : <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "6px", fontWeight: 600 }}>❌ נדרש מפתח</div>}
+                {provider === "anthropic"
+                  ? <div style={{ fontSize: "12px", color: "#2d8a6e", marginTop: "8px", fontWeight: 600 }}>✓ ספק פעיל</div>
+                  : <button onClick={() => { setProvider("anthropic"); localStorage.setItem("ai-provider", "anthropic"); }} style={{ ...BTN(), marginTop: "8px", fontSize: "12px", padding: "6px 14px" }}>בחר ספק זה</button>}
+              </>
+            )}
+            {settingsTab === "openai" && (
+              <>
+                <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "8px" }}>
+                  🔑 API Key — <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" style={{ color: "#2d8a6e" }}>platform.openai.com ↗</a>
+                </div>
+                <input type="password" value={openaiKey}
+                  onChange={e => { setOpenaiKey(e.target.value); localStorage.setItem("openai-api-key", e.target.value); }}
+                  placeholder="sk-..." style={{ ...INP, direction: "ltr", fontFamily: "monospace" }} />
+                {openaiKey
+                  ? <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px", fontWeight: 600 }}>✅ מפתח מוגדר</div>
+                  : <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "6px", fontWeight: 600 }}>❌ נדרש מפתח</div>}
+                {provider === "openai"
+                  ? <div style={{ fontSize: "12px", color: "#2d8a6e", marginTop: "8px", fontWeight: 600 }}>✓ ספק פעיל</div>
+                  : <button onClick={() => { setProvider("openai"); localStorage.setItem("ai-provider", "openai"); }} style={{ ...BTN(), marginTop: "8px", fontSize: "12px", padding: "6px 14px" }}>בחר ספק זה</button>}
+              </>
+            )}
+            {settingsTab === "gemini" && (
+              <>
+                <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "8px" }}>
+                  🔑 API Key — <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#2d8a6e" }}>aistudio.google.com ↗</a>
+                </div>
+                <input type="password" value={geminiKey}
+                  onChange={e => { setGeminiKey(e.target.value); localStorage.setItem("gemini-api-key", e.target.value); }}
+                  placeholder="AIza..." style={{ ...INP, direction: "ltr", fontFamily: "monospace" }} />
+                {geminiKey
+                  ? <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px", fontWeight: 600 }}>✅ מפתח מוגדר</div>
+                  : <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "6px", fontWeight: 600 }}>❌ נדרש מפתח</div>}
+                {provider === "gemini"
+                  ? <div style={{ fontSize: "12px", color: "#2d8a6e", marginTop: "8px", fontWeight: 600 }}>✓ ספק פעיל</div>
+                  : <button onClick={() => { setProvider("gemini"); localStorage.setItem("ai-provider", "gemini"); }} style={{ ...BTN(), marginTop: "8px", fontSize: "12px", padding: "6px 14px" }}>בחר ספק זה</button>}
+              </>
+            )}
           </div>
         </Overlay>
       )}
@@ -804,7 +1060,7 @@ function App() {
         <div style={{ flex: 1 }}>
           <div style={{ color: "#fff", fontSize: "15px", fontWeight: 700 }}>יועץ הבנייה שלי</div>
         </div>
-        <button onClick={() => setShowSettings(true)} style={{ background: apiKey ? "rgba(255,255,255,0.15)" : "rgba(239,68,68,0.5)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>⚙️</button>
+        <button onClick={() => { setSettingsTab(provider); setShowSettings(true); }} style={{ background: activeKey ? "rgba(255,255,255,0.15)" : "rgba(239,68,68,0.5)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>⚙️</button>
         <button onClick={() => setShowBackup(true)} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>💾</button>
         <button onClick={() => setShowKBPanel(true)} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "4px" }}>
           📚{knowledgeBase.length > 0 && <span style={{ background: "#ff6b35", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: 700 }}>{knowledgeBase.length}</span>}
@@ -845,10 +1101,10 @@ function App() {
               </div>
             )}
 
-            {!apiKey && (
+            {!activeKey && (
               <div style={{ background: "#fef3c7", borderBottom: "1px solid #f59e0b", padding: "10px 16px", fontSize: "13px", color: "#92400e", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span>⚠️ לא הוגדר API Key — היועץ לא יעבוד</span>
-                <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "none", color: "#2d8a6e", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", fontSize: "13px" }}>הגדר עכשיו ←</button>
+                <button onClick={() => { setSettingsTab(provider); setShowSettings(true); }} style={{ background: "none", border: "none", color: "#2d8a6e", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", fontSize: "13px" }}>הגדר עכשיו ←</button>
               </div>
             )}
 
