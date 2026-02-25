@@ -125,7 +125,7 @@ const todayStr = () => new Date().toISOString().split("T")[0];
 const clamp = (v, mn, mx) => Math.max(mn, Math.min(mx, v));
 const uid = () => Math.random().toString(36).slice(2, 9);
 
-const GOOGLE_CLIENT_ID = ""; // Paste your Google OAuth 2.0 Client ID here
+const GOOGLE_CLIENT_ID = "536306909343-ttqpfvm7bpqia6f94lnetk17e0sv9v7m.apps.googleusercontent.com";
 
 const stColors = { pending: "#94a3b8", active: "#f59e0b", done: "#22c55e", delayed: "#ef4444" };
 const stLabels = { pending: "טרם התחיל", active: "בביצוע", done: "הושלם", delayed: "מעוכב" };
