@@ -175,15 +175,9 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
   const fileRef = useRef(null);
 
   // Google Drive state
-  const [gToken, setGToken] = useState(null);
-  const [gUser, setGUser] = useState(null);
-  const [gClientId, setGClientId] = useState(() => localStorage.getItem("g-client-id") || "");
-  const [editingClientId, setEditingClientId] = useState(false);
-  const [clientIdInput, setClientIdInput] = useState("");
-  const [driveFiles, setDriveFiles] = useState([]);
+  const [scriptUrl, setScriptUrl] = useState(() => localStorage.getItem("drive-script-url") || "");
   const [driveStatus, setDriveStatus] = useState("");
   const [loadingDrive, setLoadingDrive] = useState(false);
-  const tokenClientRef = useRef(null);
 
   const buildSummaryText = () => {
     let t = `# סיכום פרויקט בנייה\nתאריך: ${new Date().toLocaleString("he-IL")}\n\n`;
@@ -202,149 +196,18 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
     return t;
   };
 
-  const loadGIS = () => new Promise((resolve, reject) => {
-    if (window.google?.accounts?.oauth2) { resolve(); return; }
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.onload = resolve; s.onerror = reject;
-    document.head.appendChild(s);
-  });
-
-  const loadDriveFilesFn = async (token) => {
-    setLoadingDrive(true);
-    try {
-      const folderName = "גיבויי פרויקט בנייה";
-      const q = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-      const fr = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const fd = await fr.json();
-      if (!fd.files?.length) { setDriveFiles([]); setLoadingDrive(false); return; }
-      const folderId = fd.files[0].id;
-      const filesQ = `'${folderId}' in parents and name contains 'גיבוי_' and trashed=false`;
-      const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(filesQ)}&orderBy=createdTime desc&pageSize=10&fields=files(id,name,createdTime)`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const d = await r.json();
-      setDriveFiles(d.files || []);
-    } catch {}
-    setLoadingDrive(false);
-  };
-
-  const signIn = async () => {
-    if (!gClientId) { setDriveStatus("❌ הגדר Client ID קודם"); return; }
-    try {
-      await loadGIS();
-      tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-        client_id: gClientId,
-        scope: "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email",
-        callback: async (response) => {
-          if (response.error) { setDriveStatus("❌ שגיאה בהתחברות"); return; }
-          setGToken(response.access_token);
-          try {
-            const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-              headers: { Authorization: `Bearer ${response.access_token}` }
-            });
-            const info = await r.json();
-            setGUser(info.email);
-          } catch {}
-          setDriveStatus("✅ מחובר!");
-          loadDriveFilesFn(response.access_token);
-        },
-      });
-      tokenClientRef.current.requestAccessToken();
-    } catch (e) {
-      setDriveStatus("❌ שגיאה בטעינת Google: " + e.message);
-    }
-  };
-
-  const signOut = () => {
-    if (gToken) window.google?.accounts?.oauth2?.revoke(gToken);
-    setGToken(null); setGUser(null); setDriveFiles([]); setDriveStatus("");
-  };
-
-  const saveClientId = () => {
-    localStorage.setItem("g-client-id", clientIdInput);
-    setGClientId(clientIdInput);
-    setEditingClientId(false);
-    setDriveStatus("✅ Client ID נשמר");
-  };
-
-  const getOrCreateFolder = async (token) => {
-    const folderName = "גיבויי פרויקט בנייה";
-    const query = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    const data = await r.json();
-    if (data.files?.length) return data.files[0].id;
-    const cr = await fetch("https://www.googleapis.com/drive/v3/files", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder" })
-    });
-    const folder = await cr.json();
-    return folder.id;
-  };
-
-  const uploadFile = async (token, folderId, name, content, mimeType) => {
-    const meta = JSON.stringify({ name, parents: [folderId] });
-    const boundary = "-------314159265358979323846";
-    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n${content}\r\n--${boundary}--`;
-    await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary="${boundary}"` },
-      body,
-    });
-  };
-
   const saveToDrive = async () => {
-    if (!gToken) return;
+    if (!scriptUrl) return;
     setLoadingDrive(true); setDriveStatus("⏳ שומר ב-Drive...");
     try {
-      const folderId = await getOrCreateFolder(gToken);
       const ts = new Date();
       const dateStr = ts.toLocaleDateString("he-IL").replace(/\./g, "-");
       const timeStr = ts.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }).replace(":", "-");
       const stamp = `${dateStr}_${timeStr}`;
       const data = { version: 2, exportDate: ts.toISOString(), knowledgeBase, phases, contractors, documents, projectStart };
-      await uploadFile(gToken, folderId, `גיבוי_${stamp}.json`, JSON.stringify(data, null, 2), "application/json");
-      await uploadFile(gToken, folderId, `סיכום_${stamp}.txt`, buildSummaryText(), "text/plain;charset=utf-8");
+      await fetch(scriptUrl, { method: "POST", body: JSON.stringify({ filename: `גיבוי_${stamp}.json`, content: JSON.stringify(data, null, 2) }) });
+      await fetch(scriptUrl, { method: "POST", body: JSON.stringify({ filename: `סיכום_${stamp}.txt`, content: buildSummaryText() }) });
       setDriveStatus("✅ נשמר ב-Drive!");
-      loadDriveFilesFn(gToken);
-    } catch (e) { setDriveStatus("❌ שגיאה: " + e.message); }
-    setLoadingDrive(false);
-  };
-
-  const restoreFromDrive = async (fileId) => {
-    if (!gToken) return;
-    if (!window.confirm("לשחזר מהגיבוי? הנתונים הנוכחיים יוחלפו.")) return;
-    setLoadingDrive(true); setDriveStatus("⏳ משחזר...");
-    try {
-      const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-        headers: { Authorization: `Bearer ${gToken}` }
-      });
-      const data = await r.json();
-      if (!data.version) { setDriveStatus("❌ קובץ לא תקין"); setLoadingDrive(false); return; }
-      if (data.knowledgeBase?.length) setKnowledgeBase(data.knowledgeBase);
-      if (data.phases?.length) setPhases(data.phases);
-      if (data.contractors?.length) setContractors(data.contractors);
-      if (data.documents?.length) setDocuments(data.documents);
-      if (data.projectStart) setProjectStart(data.projectStart);
-      setDriveStatus("✅ שוחזר בהצלחה!");
-    } catch (e) { setDriveStatus("❌ שגיאה: " + e.message); }
-    setLoadingDrive(false);
-  };
-
-  const deleteDriveFile = async (fileId, fileName) => {
-    if (!gToken) return;
-    if (!window.confirm(`למחוק ${fileName}?`)) return;
-    setLoadingDrive(true);
-    try {
-      await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-        method: "DELETE", headers: { Authorization: `Bearer ${gToken}` }
-      });
-      loadDriveFilesFn(gToken); setDriveStatus("✅ נמחק");
     } catch (e) { setDriveStatus("❌ שגיאה: " + e.message); }
     setLoadingDrive(false);
   };
@@ -385,8 +248,6 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
     reader.readAsText(file); e.target.value = "";
   };
 
-  const currentOrigin = window.location.origin;
-
   return (
     <Overlay onClose={onClose}>
       <div style={{ padding: "16px 20px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -407,73 +268,36 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
 
         {/* Google Drive Card */}
         <div style={{ background: "#f0f7ff", border: "1px solid #bfdbfe", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
-          <div style={{ fontSize: "13px", fontWeight: 700, color: "#1e40af", marginBottom: "10px" }}>☁️ Google Drive</div>
-
-          {!gToken ? (
-            <>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                <button onClick={signIn} disabled={!gClientId} style={{ ...BTN("#4285f4"), opacity: gClientId ? 1 : 0.5 }}>
-                  🔐 התחבר עם Google
-                </button>
-                <button onClick={() => { setEditingClientId(v => !v); setClientIdInput(gClientId); }} style={BTN("#e8f0fe", "#1a73e8")}>
-                  ⚙️ הגדרות
-                </button>
-              </div>
-              {!gClientId && <div style={{ fontSize: "11.5px", color: "#1e40af", marginTop: "6px" }}>לחץ ⚙️ כדי להגדיר Client ID</div>}
-            </>
-          ) : (
-            <>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "10px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "12px", color: "#1e40af", fontWeight: 600 }}>✅ {gUser}</span>
-                <button onClick={saveToDrive} disabled={loadingDrive} style={{ ...BTN("#4285f4"), opacity: loadingDrive ? 0.6 : 1 }}>
-                  ☁️ שמור ב-Drive
-                </button>
-                <button onClick={() => loadDriveFilesFn(gToken)} disabled={loadingDrive} style={BTN("#e8f0fe", "#1a73e8")}>🔄</button>
-                <button onClick={signOut} style={BTN("#fee2e2", "#dc2626")}>התנתק</button>
-              </div>
-              {driveFiles.length > 0 && (
-                <div style={{ maxHeight: "180px", overflowY: "auto" }}>
-                  {driveFiles.map(f => (
-                    <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: "1px solid #dbeafe", fontSize: "12px" }}>
-                      <span style={{ color: "#1e3a8a", flex: 1 }}>{f.name}</span>
-                      <div style={{ display: "flex", gap: "4px" }}>
-                        <button onClick={() => restoreFromDrive(f.id)} style={{ ...BTN("#dcfce7", "#166534"), fontSize: "11px", padding: "3px 8px" }}>שחזר</button>
-                        <button onClick={() => deleteDriveFile(f.id, f.name)} style={{ ...BTN("#fee2e2", "#dc2626"), fontSize: "11px", padding: "3px 8px" }}>🗑️</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {driveFiles.length === 0 && !loadingDrive && <div style={{ fontSize: "12px", color: "#64748b" }}>אין גיבויים עדיין</div>}
-            </>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "#1e40af", marginBottom: "8px" }}>☁️ Google Drive</div>
+          <div style={{ fontSize: "11.5px", color: "#374151", lineHeight: 1.7, marginBottom: "10px" }}>
+            1. פתח <a href="https://script.google.com" target="_blank" rel="noopener noreferrer" style={{ color: "#1a73e8" }}>script.google.com ↗</a> → פרויקט חדש<br />
+            2. מחק את הקוד הקיים והדבק:
+          </div>
+          <pre style={{ background: "#1e293b", color: "#e2e8f0", borderRadius: "8px", padding: "10px", fontSize: "10.5px", overflowX: "auto", marginBottom: "10px", direction: "ltr", textAlign: "left", whiteSpace: "pre-wrap" }}>{`function doPost(e) {
+  const p = JSON.parse(e.postData.contents);
+  const name = "גיבויי פרויקט בנייה";
+  const fl = DriveApp.getFoldersByName(name);
+  const folder = fl.hasNext() ? fl.next() : DriveApp.createFolder(name);
+  folder.createFile(p.filename, p.content, MimeType.PLAIN_TEXT);
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true }))
+    .setMimeType(ContentService.MimeType.JSON);
+}`}</pre>
+          <div style={{ fontSize: "11.5px", color: "#374151", lineHeight: 1.7, marginBottom: "10px" }}>
+            3. פרוס (Deploy) → Web app → Execute as: <b>Me</b> → Who has access: <b>Anyone</b><br />
+            4. העתק את ה-URL והדבק כאן:
+          </div>
+          <input
+            value={scriptUrl}
+            onChange={e => { setScriptUrl(e.target.value); localStorage.setItem("drive-script-url", e.target.value); }}
+            placeholder="https://script.google.com/macros/s/..."
+            style={{ ...INP, fontSize: "12px", direction: "ltr", marginBottom: "8px" }}
+          />
+          {scriptUrl && (
+            <button onClick={saveToDrive} disabled={loadingDrive} style={{ ...BTN("#4285f4"), opacity: loadingDrive ? 0.6 : 1 }}>
+              {loadingDrive ? "⏳ שומר..." : "☁️ שמור ב-Drive"}
+            </button>
           )}
-
-          {editingClientId && (
-            <div style={{ marginTop: "12px", background: "#fff", borderRadius: "8px", padding: "12px", border: "1px solid #bfdbfe" }}>
-              <div style={{ fontSize: "12px", color: "#374151", marginBottom: "6px", fontWeight: 600 }}>Google OAuth 2.0 Client ID</div>
-              <input
-                value={clientIdInput}
-                onChange={e => setClientIdInput(e.target.value)}
-                placeholder="123456789-xxx.apps.googleusercontent.com"
-                style={{ ...INP, fontSize: "12px", marginBottom: "8px" }}
-              />
-              <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "8px" }}>
-                Origin נוכחי: <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: "4px" }}>{currentOrigin}</code>
-                {" "}<a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" style={{ color: "#1a73e8" }}>פתח Google Console ↗</a>
-              </div>
-              <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "8px" }}>
-                1. צור פרויקט → הפעל Google Drive API<br />
-                2. Credentials → OAuth 2.0 Client ID → Web application<br />
-                3. הוסף <strong>{currentOrigin}</strong> ל-Authorized JavaScript origins<br />
-                4. הדבק את ה-Client ID למעלה ולחץ שמור
-              </div>
-              <div style={{ display: "flex", gap: "6px" }}>
-                <button onClick={saveClientId} style={BTN()}>שמור</button>
-                <button onClick={() => setEditingClientId(false)} style={BTN("#f0f0f0", "#555")}>ביטול</button>
-              </div>
-            </div>
-          )}
-
           {driveStatus && (
             <div style={{ fontSize: "12px", marginTop: "8px", fontWeight: 600, color: driveStatus.startsWith("✅") ? "#16a34a" : driveStatus.startsWith("⏳") ? "#1d4ed8" : "#dc2626" }}>
               {driveStatus}
@@ -539,6 +363,8 @@ function App() {
   const [processingFile, setProcessingFile] = useState(false);
   const [viewDoc, setViewDoc] = useState(null);
   const [showBackup, setShowBackup] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("anthropic-api-key") || "");
 
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -651,7 +477,12 @@ function App() {
       ];
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514", max_tokens: 4000,
           system: SYSTEM_PROMPT + buildCtx(),
@@ -723,6 +554,31 @@ function App() {
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
       {/* ══════════ OVERLAYS ══════════ */}
+
+      {showSettings && (
+        <Overlay onClose={() => setShowSettings(false)}>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>⚙️ הגדרות</span>
+            <button onClick={() => setShowSettings(false)} style={BTN("#f0f0f0", "#555")}>✕</button>
+          </div>
+          <div style={{ padding: "16px 20px" }}>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "4px" }}>🤖 Anthropic API Key</div>
+            <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "8px" }}>
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" style={{ color: "#2d8a6e" }}>קבל מפתח ב-console.anthropic.com ↗</a>
+            </div>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={e => { setApiKey(e.target.value); localStorage.setItem("anthropic-api-key", e.target.value); }}
+              placeholder="sk-ant-..."
+              style={{ ...INP, direction: "ltr", fontFamily: "monospace" }}
+            />
+            {apiKey
+              ? <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px", fontWeight: 600 }}>✅ מפתח מוגדר</div>
+              : <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "6px", fontWeight: 600 }}>❌ נדרש מפתח לשימוש ביועץ</div>}
+          </div>
+        </Overlay>
+      )}
 
       {showBackup && (
         <BackupPanel onClose={() => setShowBackup(false)}
@@ -948,6 +804,7 @@ function App() {
         <div style={{ flex: 1 }}>
           <div style={{ color: "#fff", fontSize: "15px", fontWeight: 700 }}>יועץ הבנייה שלי</div>
         </div>
+        <button onClick={() => setShowSettings(true)} style={{ background: apiKey ? "rgba(255,255,255,0.15)" : "rgba(239,68,68,0.5)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>⚙️</button>
         <button onClick={() => setShowBackup(true)} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>💾</button>
         <button onClick={() => setShowKBPanel(true)} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "4px" }}>
           📚{knowledgeBase.length > 0 && <span style={{ background: "#ff6b35", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: 700 }}>{knowledgeBase.length}</span>}
@@ -985,6 +842,13 @@ function App() {
                   <div style={{ fontSize: "15px", fontWeight: 700, color: "#1a3a4a" }}>שחרר כאן</div>
                   <div style={{ fontSize: "12px", color: "#666" }}>תמונות • PDF • טקסט</div>
                 </div>
+              </div>
+            )}
+
+            {!apiKey && (
+              <div style={{ background: "#fef3c7", borderBottom: "1px solid #f59e0b", padding: "10px 16px", fontSize: "13px", color: "#92400e", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>⚠️ לא הוגדר API Key — היועץ לא יעבוד</span>
+                <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "none", color: "#2d8a6e", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", fontSize: "13px" }}>הגדר עכשיו ←</button>
               </div>
             )}
 
