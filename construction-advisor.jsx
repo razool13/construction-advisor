@@ -690,7 +690,11 @@ function App() {
           }),
         });
         const data = await resp.json();
-        aText = data.candidates?.[0]?.content?.parts?.[0]?.text || "שגיאה, נסה שוב.";
+        if (data.error) {
+          aText = `❌ Gemini error: ${data.error.message || JSON.stringify(data.error)}`;
+        } else {
+          aText = data.candidates?.[0]?.content?.parts?.[0]?.text || "❌ Gemini: no response — " + JSON.stringify(data).slice(0, 200);
+        }
       }
 
       const aMsg = { role: "assistant", content: aText, apiContent: aText, usedSearch };
@@ -708,8 +712,8 @@ function App() {
           actionItems: [], notes: "", status: "חדש",
         }, ...prev]);
       }
-    } catch {
-      setMessages([...newMsgs, { role: "assistant", content: "שגיאה בחיבור." }]);
+    } catch (e) {
+      setMessages([...newMsgs, { role: "assistant", content: "❌ שגיאה בחיבור: " + e.message }]);
     }
     setLoading(false);
   }, [attachments, messages, buildCtx, setDocuments, provider, anthropicKey, openaiKey, geminiKey]);
