@@ -661,16 +661,19 @@ function App() {
     };
 
     // Helper: human-readable API error from HTTP status
-    const handleApiError = (resp, providerName) => {
+    const handleApiError = async (resp, providerName) => {
+      if (resp.ok) return null;
+      let detail = "";
+      try { const d = await resp.json(); detail = d.error?.message || ""; } catch {}
+      if (resp.status === 400)
+        return `❌ בקשה שגויה ל-${providerName}: ${detail || "בדוק הגדרות API."}`;
       if (resp.status === 401 || resp.status === 403)
         return `❌ מפתח ה-API של ${providerName} שגוי או שפג תוקפו. עדכן בהגדרות.`;
       if (resp.status === 429)
         return `⏳ חריגה ממגבלת בקשות ${providerName}. המתן דקה ונסה שוב.`;
       if (resp.status >= 500)
         return `❌ שגיאת שרת ${providerName} (${resp.status}). נסה שוב בעוד מספר דקות.`;
-      if (!resp.ok)
-        return `❌ שגיאה מ-${providerName} (${resp.status}). נסה שוב.`;
-      return null;
+      return `❌ שגיאה מ-${providerName} (${resp.status}): ${detail || "נסה שוב."}`;
     };
 
     try {
@@ -687,17 +690,17 @@ function App() {
           headers: {
             "Content-Type": "application/json",
             "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
+            "anthropic-version": "2025-04-14",
             "anthropic-dangerous-direct-browser-access": "true",
           },
           body: JSON.stringify({
-            model: "claude-sonnet-4-20250514", max_tokens: 4000,
+            model: "claude-sonnet-4-6", max_tokens: 4000,
             system: SYSTEM_PROMPT + buildCtx(),
             messages: apiMsgs,
             tools: [{ type: "web_search_20250305", name: "web_search" }],
           }),
         });
-        const apiErr = handleApiError(resp, "Anthropic");
+        const apiErr = await handleApiError(resp, "Anthropic");
         if (apiErr) { aText = apiErr; }
         else {
           const data = await resp.json();
@@ -728,7 +731,7 @@ function App() {
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
           body: JSON.stringify({ model: "gpt-4o", max_tokens: 4000, messages: oaiMsgs }),
         });
-        const apiErr = handleApiError(resp, "OpenAI");
+        const apiErr = await handleApiError(resp, "OpenAI");
         if (apiErr) { aText = apiErr; }
         else {
           const data = await resp.json();
@@ -755,7 +758,7 @@ function App() {
             contents: [...geminiHistory, { role: "user", parts: currentParts }],
           }),
         });
-        const apiErr = handleApiError(resp, "Gemini");
+        const apiErr = await handleApiError(resp, "Gemini");
         if (apiErr) { aText = apiErr; }
         else {
           const data = await resp.json();
