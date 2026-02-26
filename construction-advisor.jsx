@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "1.0.2";
+const APP_VERSION = "1.0.3";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
