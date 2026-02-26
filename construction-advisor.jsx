@@ -645,19 +645,27 @@ function App() {
       return "";
     };
 
-    // Helper: fetch with timeout (30s)
+    // Helper: fetch with timeout (30s) and single retry on 429
     const fetchWithTimeout = async (url, options, timeoutMs = 30000) => {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const resp = await fetch(url, { ...options, signal: controller.signal });
-        clearTimeout(id);
-        return resp;
-      } catch (e) {
-        clearTimeout(id);
-        if (e.name === "AbortError") throw new Error("הבקשה נכשלה — עברו 30 שניות ללא תגובה. בדוק את החיבור לאינטרנט ונסה שוב.");
-        throw e;
+      const doFetch = async () => {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const resp = await fetch(url, { ...options, signal: controller.signal });
+          clearTimeout(id);
+          return resp;
+        } catch (e) {
+          clearTimeout(id);
+          if (e.name === "AbortError") throw new Error("הבקשה נכשלה — עברו 30 שניות ללא תגובה. בדוק את החיבור לאינטרנט ונסה שוב.");
+          throw e;
+        }
+      };
+      const resp = await doFetch();
+      if (resp.status === 429) {
+        await new Promise((r) => setTimeout(r, 2000));
+        return doFetch();
       }
+      return resp;
     };
 
     // Helper: human-readable API error from HTTP status
@@ -670,7 +678,7 @@ function App() {
       if (resp.status === 401 || resp.status === 403)
         return `❌ מפתח ה-API של ${providerName} שגוי או שפג תוקפו. עדכן בהגדרות.`;
       if (resp.status === 429)
-        return `⏳ חריגה ממגבלת בקשות ${providerName}. המתן דקה ונסה שוב.`;
+        return `⏳ חריגה ממגבלת בקשות ${providerName} (גם אחרי ניסיון חוזר). ${providerName === "Gemini" ? "ב-Gemini חינמי יש מגבלה של 15 בקשות לדקה. " : ""}המתן דקה ונסה שוב.`;
       if (resp.status >= 500)
         return `❌ שגיאת שרת ${providerName} (${resp.status}). נסה שוב בעוד מספר דקות.`;
       return `❌ שגיאה מ-${providerName} (${resp.status}): ${detail || "נסה שוב."}`;
@@ -750,7 +758,7 @@ function App() {
           if (a.type === "image") currentParts.push({ inlineData: { mimeType: a.mediaType, data: a.data } });
         });
         currentParts.push({ text: fullText || "נתח" });
-        const resp = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+        const resp = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
