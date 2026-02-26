@@ -646,18 +646,19 @@ function App() {
       return "";
     };
 
-    // Helper: fetch with timeout (30s) and single retry on 429
-    const fetchWithTimeout = async (url, options, timeoutMs = 30000) => {
+    // Helper: fetch with timeout (longer for media/PDF) and single retry on 429
+    const timeoutMs = curAttach.length > 0 ? 120000 : 60000;
+    const fetchWithTimeout = async (url, options, ms = timeoutMs) => {
       const doFetch = async () => {
         const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), timeoutMs);
+        const id = setTimeout(() => controller.abort(), ms);
         try {
           const resp = await fetch(url, { ...options, signal: controller.signal });
           clearTimeout(id);
           return resp;
         } catch (e) {
           clearTimeout(id);
-          if (e.name === "AbortError") throw new Error("הבקשה נכשלה — עברו 30 שניות ללא תגובה. בדוק את החיבור לאינטרנט ונסה שוב.");
+          if (e.name === "AbortError") throw new Error(`הבקשה נכשלה — עברו ${ms / 1000} שניות ללא תגובה. בדוק את החיבור לאינטרנט ונסה שוב.`);
           throw e;
         }
       };
@@ -757,6 +758,7 @@ function App() {
         const currentParts = [];
         curAttach.forEach((a) => {
           if (a.type === "image") currentParts.push({ inlineData: { mimeType: a.mediaType, data: a.data } });
+          else if (a.type === "pdf" && a.data) currentParts.push({ inlineData: { mimeType: "application/pdf", data: a.data } });
         });
         currentParts.push({ text: fullText || "נתח" });
         const resp = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
