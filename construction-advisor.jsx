@@ -172,7 +172,7 @@ const formatMsg = (text) =>
 /* ═══════════════════════════════════════════
    BACKUP / RESTORE - defined outside for stable reference
    ═══════════════════════════════════════════ */
-function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, projectStart, setKnowledgeBase, setPhases, setContractors, setDocuments, setProjectStart }) {
+function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, projectStart, setKnowledgeBase, setPhases, setContractors, setDocuments, setProjectStart, lastBackup, updateLastBackup }) {
   const [importStatus, setImportStatus] = useState("");
   const fileRef = useRef(null);
 
@@ -302,6 +302,7 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
       await uploadFile(`גיבוי_${stamp}.json`, JSON.stringify(backup, null, 2), "application/json");
       await uploadFile(`סיכום_${stamp}.txt`, buildSummaryText(), "text/plain");
       setDriveStatus("✅ נשמר ב-Drive!");
+      if (updateLastBackup) updateLastBackup();
       loadDriveFiles(gToken);
     } catch (e) { setDriveStatus("❌ " + e.message); }
     setLoadingDrive(false);
@@ -347,6 +348,7 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
     const a = document.createElement("a"); a.href = url;
     a.download = `backup-project-${new Date().toLocaleDateString("he-IL").replace(/\./g, "-")}.json`;
     a.click(); URL.revokeObjectURL(url);
+    if (updateLastBackup) updateLastBackup();
   };
 
   const exportSummary = () => {
@@ -378,9 +380,20 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
 
   return (
     <Overlay onClose={onClose}>
-      <div style={{ padding: "16px 20px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>💾 גיבוי ושחזור</span>
-        <button onClick={onClose} style={BTN("#f0f0f0", "#555")}>✕</button>
+      <div style={{ padding: "16px 20px", borderBottom: "1px solid #eee" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>💾 גיבוי ושחזור</span>
+          <button onClick={onClose} style={BTN("#f0f0f0", "#555")}>✕</button>
+        </div>
+        {lastBackup ? (
+          <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "6px" }}>
+            גיבוי אחרון: {new Date(lastBackup).toLocaleString("he-IL")}
+          </div>
+        ) : (
+          <div style={{ fontSize: "11px", color: "#ef4444", marginTop: "6px" }}>
+            ⚠️ טרם בוצע גיבוי
+          </div>
+        )}
       </div>
       <div style={{ padding: "16px 20px" }}>
         {/* Stats */}
@@ -458,7 +471,12 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
 
         {/* Reset */}
         <div style={{ borderTop: "1px solid #eee", paddingTop: "12px" }}>
-          <button onClick={() => { if (window.confirm("למחוק הכל? (עשה גיבוי לפני!)")) { setKnowledgeBase([]); setPhases([]); setContractors([]); setDocuments([]); setProjectStart(todayStr()); onClose(); } }} style={BTN("#fee2e2", "#dc2626")}>🗑️ איפוס מלא</button>
+          <button onClick={() => {
+            if (window.confirm("למחוק הכל? גיבוי אוטומטי יורד לפני המחיקה.")) {
+              exportAll();
+              setKnowledgeBase([]); setPhases([]); setContractors([]); setDocuments([]); setProjectStart(todayStr()); onClose();
+            }
+          }} style={BTN("#fee2e2", "#dc2626")}>🗑️ איפוס מלא</button>
         </div>
       </div>
     </Overlay>
@@ -499,6 +517,14 @@ function App() {
   const [showBackup, setShowBackup] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState("anthropic");
+
+  // Backup tracking
+  const [lastBackup, setLastBackup] = useState(() => localStorage.getItem("myhouse-last-backup") || "");
+  const updateLastBackup = useCallback(() => {
+    const ts = new Date().toISOString();
+    localStorage.setItem("myhouse-last-backup", ts);
+    setLastBackup(ts);
+  }, []);
 
   // AI provider state
   const [provider, setProvider] = useState(() => localStorage.getItem("ai-provider") || "anthropic");
@@ -619,6 +645,34 @@ function App() {
       return "";
     };
 
+    // Helper: fetch with timeout (30s)
+    const fetchWithTimeout = async (url, options, timeoutMs = 30000) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const resp = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(id);
+        return resp;
+      } catch (e) {
+        clearTimeout(id);
+        if (e.name === "AbortError") throw new Error("הבקשה נכשלה — עברו 30 שניות ללא תגובה. בדוק את החיבור לאינטרנט ונסה שוב.");
+        throw e;
+      }
+    };
+
+    // Helper: human-readable API error from HTTP status
+    const handleApiError = (resp, providerName) => {
+      if (resp.status === 401 || resp.status === 403)
+        return `❌ מפתח ה-API של ${providerName} שגוי או שפג תוקפו. עדכן בהגדרות.`;
+      if (resp.status === 429)
+        return `⏳ חריגה ממגבלת בקשות ${providerName}. המתן דקה ונסה שוב.`;
+      if (resp.status >= 500)
+        return `❌ שגיאת שרת ${providerName} (${resp.status}). נסה שוב בעוד מספר דקות.`;
+      if (!resp.ok)
+        return `❌ שגיאה מ-${providerName} (${resp.status}). נסה שוב.`;
+      return null;
+    };
+
     try {
       let aText = "";
       let usedSearch = false;
@@ -628,7 +682,7 @@ function App() {
           ...messages.map((m) => ({ role: m.role, content: m.apiContent || m.displayText || m.content || "" })),
           { role: "user", content: userContent },
         ];
-        const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        const resp = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -643,9 +697,16 @@ function App() {
             tools: [{ type: "web_search_20250305", name: "web_search" }],
           }),
         });
-        const data = await resp.json();
-        aText = data.content?.filter((b) => b.type === "text").map((b) => b.text).join("\n") || "שגיאה, נסה שוב.";
-        usedSearch = data.content?.some((b) => b.type === "web_search_tool_result" || b.type === "server_tool_use");
+        const apiErr = handleApiError(resp, "Anthropic");
+        if (apiErr) { aText = apiErr; }
+        else {
+          const data = await resp.json();
+          if (data.error) { aText = `❌ שגיאת Anthropic: ${data.error.message || JSON.stringify(data.error)}`; }
+          else {
+            aText = data.content?.filter((b) => b.type === "text").map((b) => b.text).join("\n") || "❌ Anthropic לא החזיר תשובה. נסה שוב.";
+            usedSearch = data.content?.some((b) => b.type === "web_search_tool_result" || b.type === "server_tool_use");
+          }
+        }
 
       } else if (provider === "openai") {
         // Build OpenAI-format current message content
@@ -662,13 +723,18 @@ function App() {
           })),
           { role: "user", content: oaiUserContent.length === 1 ? oaiUserContent[0].text : oaiUserContent },
         ];
-        const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+        const resp = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
           body: JSON.stringify({ model: "gpt-4o", max_tokens: 4000, messages: oaiMsgs }),
         });
-        const data = await resp.json();
-        aText = data.choices?.[0]?.message?.content || "שגיאה, נסה שוב.";
+        const apiErr = handleApiError(resp, "OpenAI");
+        if (apiErr) { aText = apiErr; }
+        else {
+          const data = await resp.json();
+          if (data.error) { aText = `❌ שגיאת OpenAI: ${data.error.message || JSON.stringify(data.error)}`; }
+          else { aText = data.choices?.[0]?.message?.content || "❌ OpenAI לא החזיר תשובה. נסה שוב."; }
+        }
 
       } else if (provider === "gemini") {
         // Build Gemini-format contents
@@ -681,7 +747,7 @@ function App() {
           if (a.type === "image") currentParts.push({ inlineData: { mimeType: a.mediaType, data: a.data } });
         });
         currentParts.push({ text: fullText || "נתח" });
-        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+        const resp = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -689,11 +755,15 @@ function App() {
             contents: [...geminiHistory, { role: "user", parts: currentParts }],
           }),
         });
-        const data = await resp.json();
-        if (data.error) {
-          aText = `❌ Gemini error: ${data.error.message || JSON.stringify(data.error)}`;
-        } else {
-          aText = data.candidates?.[0]?.content?.parts?.[0]?.text || "❌ Gemini: no response — " + JSON.stringify(data).slice(0, 200);
+        const apiErr = handleApiError(resp, "Gemini");
+        if (apiErr) { aText = apiErr; }
+        else {
+          const data = await resp.json();
+          if (data.error) {
+            aText = `❌ שגיאת Gemini: ${data.error.message || JSON.stringify(data.error)}`;
+          } else {
+            aText = data.candidates?.[0]?.content?.parts?.[0]?.text || "❌ Gemini לא החזיר תשובה. נסה שוב.";
+          }
         }
       }
 
@@ -713,7 +783,12 @@ function App() {
         }, ...prev]);
       }
     } catch (e) {
-      setMessages([...newMsgs, { role: "assistant", content: "❌ שגיאה בחיבור: " + e.message }]);
+      const errMsg = e.message?.includes("30 שניות")
+        ? e.message
+        : e.message?.includes("Failed to fetch") || e.message?.includes("NetworkError")
+          ? "❌ שגיאת רשת — בדוק את החיבור לאינטרנט ונסה שוב."
+          : "❌ שגיאה בחיבור: " + e.message;
+      setMessages([...newMsgs, { role: "assistant", content: errMsg }]);
     }
     setLoading(false);
   }, [attachments, messages, buildCtx, setDocuments, provider, anthropicKey, openaiKey, geminiKey]);
@@ -741,6 +816,22 @@ function App() {
     const intl = c.startsWith("0") ? "972" + c.slice(1) : c;
     window.open(`https://wa.me/${intl}?text=${encodeURIComponent(text)}`, "_blank");
   }, []);
+
+  /* ═══ QUICK EXPORT ═══ */
+  const quickExport = useCallback(() => {
+    const data = { version: 2, exportDate: new Date().toISOString(), knowledgeBase, phases, contractors, documents, projectStart };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url;
+    a.download = `backup-project-${new Date().toLocaleDateString("he-IL").replace(/\./g, "-")}.json`;
+    a.click(); URL.revokeObjectURL(url);
+    updateLastBackup();
+  }, [knowledgeBase, phases, contractors, documents, projectStart, updateLastBackup]);
+
+  // Backup age indicator
+  const backupAge = lastBackup ? Math.floor((Date.now() - new Date(lastBackup).getTime()) / 86400000) : -1;
+  const backupColor = backupAge < 0 ? "#ef4444" : backupAge < 1 ? "#22c55e" : backupAge < 7 ? "#f59e0b" : "#ef4444";
+  const backupLabel = backupAge < 0 ? "לא גובה" : backupAge < 1 ? "גובה היום" : `גובה לפני ${backupAge} ימים`;
 
   /* ═══ TABS CONFIG ═══ */
   const tabs = [
@@ -843,7 +934,8 @@ function App() {
       {showBackup && (
         <BackupPanel onClose={() => setShowBackup(false)}
           knowledgeBase={knowledgeBase} phases={phases} contractors={contractors} documents={documents} projectStart={projectStart}
-          setKnowledgeBase={setKnowledgeBase} setPhases={setPhases} setContractors={setContractors} setDocuments={setDocuments} setProjectStart={setProjectStart} />
+          setKnowledgeBase={setKnowledgeBase} setPhases={setPhases} setContractors={setContractors} setDocuments={setDocuments} setProjectStart={setProjectStart}
+          lastBackup={lastBackup} updateLastBackup={updateLastBackup} />
       )}
 
       {/* KB Panel */}
@@ -1065,7 +1157,13 @@ function App() {
           <div style={{ color: "#fff", fontSize: "15px", fontWeight: 700 }}>יועץ הבנייה שלי</div>
         </div>
         <button onClick={() => { setSettingsTab(provider); setShowSettings(true); }} style={{ background: activeKey ? "rgba(255,255,255,0.15)" : "rgba(239,68,68,0.5)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>⚙️</button>
-        <button onClick={() => setShowBackup(true)} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>💾</button>
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <button onClick={quickExport} title="ייצוא מהיר" style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px 0 0 8px", color: "#fff", padding: "5px 8px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>💾</button>
+          <button onClick={() => setShowBackup(true)} title={backupLabel} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderLeft: "none", borderRadius: "0 8px 8px 0", color: "#fff", padding: "5px 8px", cursor: "pointer", fontSize: "10px", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "3px" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: backupColor, display: "inline-block" }}></span>
+            <span style={{ opacity: 0.85 }}>☁️</span>
+          </button>
+        </div>
         <button onClick={() => setShowKBPanel(true)} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "4px" }}>
           📚{knowledgeBase.length > 0 && <span style={{ background: "#ff6b35", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: 700 }}>{knowledgeBase.length}</span>}
         </button>
