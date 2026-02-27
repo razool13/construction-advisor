@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "1.0.6";
+const APP_VERSION = "1.0.7";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -903,7 +903,10 @@ function App() {
 
   const getGanttRange = useCallback(() => {
     if (!phases.length) return { minDate: todayStr(), totalDays: 365 };
+    const today = new Date(todayStr());
     const dates = phases.flatMap((p) => [new Date(p.start), new Date(p.end)]);
+    // Include today in the range so the "today" line is always visible
+    dates.push(today);
     const min = new Date(Math.min(...dates)); const max = new Date(Math.max(...dates));
     min.setDate(min.getDate() - 7); max.setDate(max.getDate() + 14);
     return { minDate: min.toISOString().split("T")[0], totalDays: daysBetween(min.toISOString().split("T")[0], max.toISOString().split("T")[0]) };
@@ -1581,8 +1584,14 @@ function App() {
 
                   <div style={{ overflowX: "auto" }}>
                     <div style={{ minWidth: Math.max(500, totalDays * 2.5) }}>
-                      <div style={{ position: "relative", height: "22px", marginBottom: "4px", borderBottom: "1px solid #e5e5e5" }}>
-                        {months.map((m, i) => <div key={i} style={{ position: "absolute", right: `${m.offset}%`, fontSize: "10px", color: "#888", fontWeight: 600, whiteSpace: "nowrap" }}>{m.label}</div>)}
+                      {/* Month headers - same flex layout as phase rows for alignment */}
+                      <div style={{ display: "flex", alignItems: "center", marginBottom: "4px", borderBottom: "1px solid #e5e5e5" }}>
+                        <div style={{ width: "115px", flexShrink: 0 }} />
+                        <div style={{ flex: 1, position: "relative", height: "22px" }}>
+                          {months.map((m, i) => <div key={i} style={{ position: "absolute", right: `${m.offset}%`, fontSize: "10px", color: "#888", fontWeight: 600, whiteSpace: "nowrap" }}>{m.label}</div>)}
+                          <div style={{ position: "absolute", right: `${todayOff}%`, top: 0, bottom: "-4px", width: "1.5px", background: "#ef4444", zIndex: 2, opacity: 0.6 }} />
+                          <div style={{ position: "absolute", right: `${todayOff}%`, top: "-2px", transform: "translateX(50%)", fontSize: "8px", color: "#ef4444", fontWeight: 700, whiteSpace: "nowrap", background: "#fff", padding: "0 2px", borderRadius: "2px" }}>היום</div>
+                        </div>
                       </div>
                       {phases.map((phase) => {
                         const sOff = clamp(daysBetween(minDate, phase.start) / totalDays * 100, 0, 100);
@@ -1594,7 +1603,7 @@ function App() {
                               <div style={{ fontSize: "9.5px", color: "#999" }}>{phase.contractor || ""}</div>
                             </div>
                             <div style={{ flex: 1, position: "relative", height: "26px" }}>
-                              <div style={{ position: "absolute", right: `${todayOff}%`, top: 0, bottom: 0, width: "1.5px", background: "#ef4444", zIndex: 2, opacity: 0.4 }} />
+                              <div style={{ position: "absolute", right: `${todayOff}%`, top: 0, bottom: 0, width: "1.5px", background: "#ef4444", zIndex: 2, opacity: 0.3 }} />
                               <div style={{ position: "absolute", right: `${sOff}%`, width: `${w}%`, top: "2px", bottom: "2px", borderRadius: "5px", background: phase.color + "20", border: `1.5px solid ${phase.color}35` }}>
                                 <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: `${phase.progress || 0}%`, background: phase.color, borderRadius: "4px", opacity: 0.5 }} />
                                 <div style={{ position: "absolute", left: "5px", top: "50%", transform: "translateY(-50%)", width: "6px", height: "6px", borderRadius: "50%", background: stColors[phase.status] }} />
@@ -1605,7 +1614,7 @@ function App() {
                         );
                       })}
                       <div style={{ display: "flex", gap: "10px", marginTop: "8px", fontSize: "10px", color: "#888" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: "3px" }}><div style={{ width: 8, height: 1.5, background: "#ef4444" }} />היום</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: "3px" }}><div style={{ width: 8, height: 1.5, background: "#ef4444" }} />היום ({formatDate(todayStr())})</span>
                         {Object.entries(stLabels).map(([k, v]) => <span key={k} style={{ display: "flex", alignItems: "center", gap: "3px" }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: stColors[k] }} />{v}</span>)}
                       </div>
                     </div>
