@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "1.0.3";
+const APP_VERSION = "1.0.4";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -796,6 +796,17 @@ function App() {
           actionItems: [], notes: "", status: "חדש",
         }, ...prev]);
       }
+
+      // Append follow-up Q&A to matching document conversation
+      const followUpMatch = displayText.match(/^לגבי "(.+?)" - /);
+      if (followUpMatch) {
+        const docTitle = followUpMatch[1];
+        setDocuments((prev) => prev.map((d) =>
+          d.title === docTitle
+            ? { ...d, conversation: [...(d.conversation || []), { role: "user", text: displayText }, { role: "assistant", text: aText }] }
+            : d
+        ));
+      }
     } catch (e) {
       const errMsg = e.message?.includes("30 שניות")
         ? e.message
@@ -1112,7 +1123,7 @@ function App() {
                 {viewDoc.conversation.map((m, i) => (
                   <div key={i} style={{ background: m.role === "user" ? "#1a3a4a" : "#f8f6f3", color: m.role === "user" ? "#fff" : "#2c2c2c", borderRadius: "10px", padding: "10px 14px", marginBottom: "4px", fontSize: "12.5px" }}>
                     <div style={{ fontWeight: 600, fontSize: "11px", marginBottom: "2px", opacity: 0.7 }}>{m.role === "user" ? "אני" : "יועץ"}</div>
-                    <div style={{ maxHeight: "80px", overflow: "hidden" }}>{m.text}</div>
+                    <div style={{ maxHeight: "150px", overflowY: "auto" }}>{m.text}</div>
                   </div>
                 ))}
               </div>
