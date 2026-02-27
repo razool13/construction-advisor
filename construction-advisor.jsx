@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "1.0.3";
+const APP_VERSION = "1.0.5";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -796,6 +796,29 @@ function App() {
           actionItems: [], notes: "", status: "חדש",
         }, ...prev]);
       }
+
+      // Append follow-up Q&A to matching document conversation + timeline summary
+      const followUpMatch = displayText.match(/^לגבי "(.+?)" - (.+)/);
+      if (followUpMatch) {
+        const docTitle = followUpMatch[1];
+        const question = followUpMatch[2].trim();
+        // Create a concise timeline entry: date + question + first line of answer
+        const firstLine = aText.split("\n").find((l) => l.trim().length > 10) || aText.slice(0, 120);
+        const timelineEntry = {
+          date: new Date().toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }),
+          question: question.slice(0, 80),
+          summary: firstLine.replace(/^[#*\-•]+\s*/, "").slice(0, 150),
+        };
+        setDocuments((prev) => prev.map((d) =>
+          d.title === docTitle
+            ? {
+                ...d,
+                conversation: [...(d.conversation || []), { role: "user", text: displayText }, { role: "assistant", text: aText }],
+                timeline: [...(d.timeline || []), timelineEntry],
+              }
+            : d
+        ));
+      }
     } catch (e) {
       const errMsg = e.message?.includes("30 שניות")
         ? e.message
@@ -1106,13 +1129,30 @@ function App() {
               <div style={{ fontSize: "13px", lineHeight: 1.65, maxHeight: "300px", overflowY: "auto" }}>{formatMsg(viewDoc.analysis || "")}</div>
             </div>
 
+            {viewDoc.timeline?.length > 0 && (
+              <div style={{ background: "#fef9ef", borderRadius: "12px", padding: "14px", marginBottom: "12px", border: "1px solid #f0dca0" }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#8a6d1b", marginBottom: "8px" }}>📋 השתלשלות עניינים</div>
+                <div style={{ fontSize: "12px", color: "#1a3a4a" }}>
+                  {viewDoc.timeline.map((t, i) => (
+                    <div key={i} style={{ display: "flex", gap: "8px", padding: "5px 0", borderBottom: i < viewDoc.timeline.length - 1 ? "1px solid #f0dca060" : "none", alignItems: "flex-start" }}>
+                      <span style={{ fontSize: "11px", color: "#8a6d1b", fontWeight: 600, whiteSpace: "nowrap", minWidth: "80px", direction: "ltr", textAlign: "right" }}>{t.date}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: "12px", marginBottom: "2px" }}>❓ {t.question}</div>
+                        <div style={{ fontSize: "11.5px", color: "#555", lineHeight: 1.5 }}>💡 {t.summary}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {viewDoc.conversation?.length > 0 && (
               <div style={{ marginBottom: "12px" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "6px" }}>💬 שיחה</div>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "6px" }}>💬 שיחה מלאה</div>
                 {viewDoc.conversation.map((m, i) => (
                   <div key={i} style={{ background: m.role === "user" ? "#1a3a4a" : "#f8f6f3", color: m.role === "user" ? "#fff" : "#2c2c2c", borderRadius: "10px", padding: "10px 14px", marginBottom: "4px", fontSize: "12.5px" }}>
                     <div style={{ fontWeight: 600, fontSize: "11px", marginBottom: "2px", opacity: 0.7 }}>{m.role === "user" ? "אני" : "יועץ"}</div>
-                    <div style={{ maxHeight: "80px", overflow: "hidden" }}>{m.text}</div>
+                    <div style={{ maxHeight: "150px", overflowY: "auto" }}>{m.text}</div>
                   </div>
                 ))}
               </div>
@@ -1121,25 +1161,59 @@ function App() {
             <div style={{ marginBottom: "12px" }}>
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "6px", display: "flex", justifyContent: "space-between" }}>
                 <span>✅ צעדים הבאים</span>
-                <button onClick={() => {
-                  const item = prompt("הוסף צעד:");
-                  if (item) {
-                    const updated = { ...viewDoc, actionItems: [...(viewDoc.actionItems || []), { text: item, done: false, id: uid() }] };
-                    setDocuments((p) => p.map((d) => (d.id === viewDoc.id ? updated : d)));
-                    setViewDoc(updated);
-                  }
-                }} style={{ ...BTN(), fontSize: "11px", padding: "3px 10px" }}>+ הוסף</button>
+                <div style={{ display: "flex", gap: "4px" }}>
+                  <button onClick={() => {
+                    const item = prompt("הוסף צעד:");
+                    if (item) {
+                      const updated = { ...viewDoc, actionItems: [...(viewDoc.actionItems || []), { text: item, done: false, id: uid(), dueDate: "" }] };
+                      setDocuments((p) => p.map((d) => (d.id === viewDoc.id ? updated : d)));
+                      setViewDoc(updated);
+                    }
+                  }} style={{ ...BTN(), fontSize: "11px", padding: "3px 10px" }}>+ הוסף</button>
+                  {(viewDoc.actionItems || []).length > 0 && (
+                    <button onClick={() => {
+                      const items = (viewDoc.actionItems || []).filter((a) => !a.done);
+                      if (!items.length) { alert("אין משימות פתוחות לייצוא"); return; }
+                      const calEvents = items.map((a) => {
+                        const d = a.dueDate || new Date().toISOString().split("T")[0];
+                        const clean = d.replace(/-/g, "");
+                        return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(a.text + " - " + viewDoc.title)}&dates=${clean}/${clean}&details=${encodeURIComponent("משימה מיועץ הבנייה: " + viewDoc.title)}`;
+                      });
+                      calEvents.forEach((url) => window.open(url, "_blank"));
+                    }} style={{ ...BTN("#4285f4"), fontSize: "11px", padding: "3px 8px" }} title="ייצוא ל-Google Calendar">📅 GCal</button>
+                  )}
+                  {(viewDoc.actionItems || []).length > 0 && (
+                    <button onClick={() => {
+                      const items = (viewDoc.actionItems || []).filter((a) => !a.done);
+                      if (!items.length) { alert("אין משימות פתוחות לייצוא"); return; }
+                      const taskLines = items.map((a) => (a.dueDate ? `${a.text} (עד ${a.dueDate})` : a.text)).join("\n");
+                      const url = `https://tasks.google.com/embed/?origin=https://calendar.google.com`;
+                      navigator.clipboard.writeText(taskLines).then(() => {
+                        alert("המשימות הועתקו ללוח!\n\nלחץ OK לפתיחת Google Tasks.\nשם תוכל להדביק ולהוסיף את המשימות.");
+                        window.open(url, "_blank");
+                      }).catch(() => {
+                        alert("לא ניתן להעתיק. המשימות:\n\n" + taskLines);
+                      });
+                    }} style={{ ...BTN("#0d9d58"), fontSize: "11px", padding: "3px 8px" }} title="ייצוא ל-Google Tasks">✅ Tasks</button>
+                  )}
+                </div>
               </div>
               {(viewDoc.actionItems || []).length === 0 ? (
                 <div style={{ fontSize: "12px", color: "#999" }}>אין צעדים. לחץ "הוסף" להוסיף.</div>
               ) : (viewDoc.actionItems || []).map((a) => (
-                <div key={a.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "5px 0", borderBottom: "1px solid #f0f0f0" }}>
+                <div key={a.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 0", borderBottom: "1px solid #f0f0f0", flexWrap: "wrap" }}>
                   <button onClick={() => {
                     const updated = { ...viewDoc, actionItems: viewDoc.actionItems.map((x) => (x.id === a.id ? { ...x, done: !x.done } : x)) };
                     setDocuments((p) => p.map((d) => (d.id === viewDoc.id ? updated : d)));
                     setViewDoc(updated);
                   }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>{a.done ? "✅" : "⬜"}</button>
-                  <span style={{ fontSize: "13px", textDecoration: a.done ? "line-through" : "none", opacity: a.done ? 0.5 : 1, flex: 1 }}>{a.text}</span>
+                  <span style={{ fontSize: "13px", textDecoration: a.done ? "line-through" : "none", opacity: a.done ? 0.5 : 1, flex: 1, minWidth: "100px" }}>{a.text}</span>
+                  <input type="date" value={a.dueDate || ""} onChange={(e) => {
+                    const updated = { ...viewDoc, actionItems: viewDoc.actionItems.map((x) => (x.id === a.id ? { ...x, dueDate: e.target.value } : x)) };
+                    setDocuments((p) => p.map((d) => (d.id === viewDoc.id ? updated : d)));
+                    setViewDoc(updated);
+                  }} style={{ border: "1px solid #ddd", borderRadius: "6px", padding: "2px 4px", fontSize: "11px", fontFamily: "inherit", direction: "ltr", width: "120px", color: a.dueDate ? (a.dueDate < new Date().toISOString().split("T")[0] && !a.done ? "#e74c3c" : "#333") : "#aaa" }}
+                    title="תאריך יעד" />
                   <button onClick={() => {
                     const updated = { ...viewDoc, actionItems: viewDoc.actionItems.filter((x) => x.id !== a.id) };
                     setDocuments((p) => p.map((d) => (d.id === viewDoc.id ? updated : d)));
