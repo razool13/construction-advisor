@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "1.0.5";
+const APP_VERSION = "1.0.6";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -85,7 +85,18 @@ const SYSTEM_PROMPT = `אתה יועץ בנייה מקצועי ומנוסה מא
 7. צעדים הבאים
 
 ידע: בנייה, אינסטלציה, חשמל, גמרים, בידוד, איטום, תקנים, היתרים, חוזים, משכנתאות.
-כללים: 1) עברית 2) ישיר אך מכבד 3) אינטרס בעל הבית 4) מספרים 5) דיפלומטי`;
+כללים: 1) עברית 2) ישיר אך מכבד 3) אינטרס בעל הבית 4) מספרים 5) דיפלומטי
+
+🔧 עריכת גאנט מהצ'אט:
+כשהמשתמש מבקש לשנות את לוח הזמנים, להזיז שלב, להוסיף שלב, למחוק שלב, או לעדכן סטטוס/קבלן - הוסף בסוף התשובה פקודות בפורמט הבא (שורה חדשה לכל פקודה):
+[GANTT:ADD|שם שלב|תאריך-התחלה|תאריך-סיום|צבע-hex]
+[GANTT:UPDATE|שם שלב קיים|שדה=ערך|שדה=ערך]
+  שדות: name, start, end, status(pending/active/done/delayed), contractor, progress(0-100), color
+[GANTT:DELETE|שם שלב]
+[GANTT:MOVE|שם שלב|תאריך-התחלה-חדש|תאריך-סיום-חדש]
+דוגמא: המשתמש אומר "הקדם את שלב הטיח ב-2 שבועות" → ענה בטקסט רגיל, ובסוף:
+[GANTT:MOVE|טיח וריצוף|2025-06-01|2025-07-01]
+חשוב: השתמש בשמות השלבים בדיוק כפי שמופיעים בהקשר. אל תמציא שלבים.`;
 
 const PHASES_TEMPLATE = [
   { name: "תכנון ואדריכלות", duration: 60, color: "#6366f1" },
@@ -500,6 +511,7 @@ function App() {
   const [contractors, setContractors] = useStorage("myhouse-contractors", []);
   const [documents, setDocuments] = useStorage("myhouse-documents", []);
   const [projectStart, setProjectStart] = useStorage("myhouse-start-date", todayStr());
+  const [ganttVersions, setGanttVersions] = useStorage("myhouse-gantt-versions", []);
 
   // UI states
   const [showKB, setShowKB] = useState(false);
@@ -517,6 +529,7 @@ function App() {
   const [viewDoc, setViewDoc] = useState(null);
   const [showBackup, setShowBackup] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showGanttHistory, setShowGanttHistory] = useState(false);
   const [settingsTab, setSettingsTab] = useState("anthropic");
 
   // Backup tracking
@@ -781,7 +794,55 @@ function App() {
         }
       }
 
-      const aMsg = { role: "assistant", content: aText, apiContent: aText, usedSearch };
+      // Parse and apply Gantt commands from AI response
+      const ganttCmds = [];
+      const ganttRegex = /\[GANTT:(ADD|UPDATE|DELETE|MOVE)\|(.+?)\]/g;
+      let gMatch;
+      while ((gMatch = ganttRegex.exec(aText)) !== null) {
+        ganttCmds.push({ action: gMatch[1], params: gMatch[2].split("|").map((s) => s.trim()) });
+      }
+      // Clean Gantt commands from displayed text
+      const cleanText = ganttCmds.length > 0 ? aText.replace(/\n?\[GANTT:[^\]]+\]/g, "").trim() : aText;
+
+      if (ganttCmds.length > 0) {
+        // Save version snapshot before applying changes
+        setGanttVersions((prev) => [...prev.slice(-19), {
+          id: uid(),
+          date: new Date().toLocaleString("he-IL"),
+          label: ganttCmds.map((c) => `${c.action}: ${c.params[0]}`).join(", "),
+          phases: JSON.parse(JSON.stringify(phases)),
+        }]);
+
+        setPhases((prev) => {
+          let updated = [...prev];
+          ganttCmds.forEach((cmd) => {
+            const [p0, p1, p2, p3] = cmd.params;
+            if (cmd.action === "ADD") {
+              updated.push({ id: uid(), name: p0, start: p1, end: p2, color: p3 || "#6366f1", status: "pending", contractor: "", progress: 0 });
+            } else if (cmd.action === "DELETE") {
+              updated = updated.filter((ph) => !ph.name.includes(p0));
+            } else if (cmd.action === "MOVE") {
+              updated = updated.map((ph) => ph.name.includes(p0) ? { ...ph, start: p1, end: p2 } : ph);
+            } else if (cmd.action === "UPDATE") {
+              const fields = cmd.params.slice(1);
+              updated = updated.map((ph) => {
+                if (!ph.name.includes(p0)) return ph;
+                const copy = { ...ph };
+                fields.forEach((f) => {
+                  const [key, ...rest] = f.split("=");
+                  const val = rest.join("=");
+                  if (key === "progress") copy.progress = parseInt(val, 10) || 0;
+                  else if (key && val) copy[key.trim()] = val.trim();
+                });
+                return copy;
+              });
+            }
+          });
+          return updated;
+        });
+      }
+
+      const aMsg = { role: "assistant", content: cleanText, apiContent: aText, usedSearch, ganttCmds: ganttCmds.length > 0 ? ganttCmds : undefined };
       setMessages([...newMsgs, aMsg]);
 
       // Auto-save as document
@@ -828,7 +889,7 @@ function App() {
       setMessages([...newMsgs, { role: "assistant", content: errMsg }]);
     }
     setLoading(false);
-  }, [attachments, messages, buildCtx, setDocuments, provider, anthropicKey, openaiKey, geminiKey]);
+  }, [attachments, messages, buildCtx, setDocuments, provider, anthropicKey, openaiKey, geminiKey, phases, setPhases, setGanttVersions]);
 
   /* ─── Gantt ─── */
   const initPhases = useCallback(() => {
@@ -1348,7 +1409,8 @@ function App() {
                         ) : msg.role === "assistant" ? (
                           <>
                             {msg.usedSearch && <div style={TAG("#f0faf5", "#2d8a6e")}>🔍 כולל חיפוש</div>}
-                            <div style={{ marginTop: msg.usedSearch ? "8px" : 0 }}>{formatMsg(msg.content || "")}</div>
+                            {msg.ganttCmds && <div style={TAG("#fef3c7", "#92400e")}>📊 הגאנט עודכן ({msg.ganttCmds.length} {msg.ganttCmds.length === 1 ? "שינוי" : "שינויים"})</div>}
+                            <div style={{ marginTop: (msg.usedSearch || msg.ganttCmds) ? "8px" : 0 }}>{formatMsg(msg.content || "")}</div>
                           </>
                         ) : (
                           <>
@@ -1484,7 +1546,39 @@ function App() {
                     {Object.entries(stLabels).map(([k, v]) => { const n = phases.filter((p) => p.status === k).length; return n > 0 ? <div key={k} style={TAG(stColors[k] + "20", stColors[k])}>{v}: {n}</div> : null; })}
                     <div style={{ flex: 1 }} />
                     <button onClick={() => { const np = { name: "שלב חדש", start: phases[phases.length - 1]?.end || todayStr(), end: addDays(phases[phases.length - 1]?.end || todayStr(), 21), color: "#6366f1", status: "pending", contractor: "", progress: 0, id: uid() }; setPhases((p) => [...p, np]); setEditPhase(np); }} style={{ ...BTN(), fontSize: "12px", padding: "5px 12px" }}>+ שלב</button>
+                    {ganttVersions.length > 0 && (
+                      <button onClick={() => setShowGanttHistory((v) => !v)} style={{ ...BTN(showGanttHistory ? "#7c3aed" : "#8b5cf620", showGanttHistory ? "#fff" : "#7c3aed"), fontSize: "12px", padding: "5px 12px", border: "1px solid #8b5cf640" }}>🕐 גרסאות ({ganttVersions.length})</button>
+                    )}
                   </div>
+                  {showGanttHistory && ganttVersions.length > 0 && (
+                    <div style={{ ...CARD, marginBottom: "10px", border: "1px solid #8b5cf630", background: "#faf8ff" }}>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#7c3aed", marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>🕐 היסטוריית גרסאות</span>
+                        <button onClick={() => { if (confirm("למחוק את כל היסטוריית הגרסאות?")) setGanttVersions([]); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "11px", color: "#999" }}>🗑️ נקה</button>
+                      </div>
+                      <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+                        {[...ganttVersions].reverse().map((v, i) => (
+                          <div key={v.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 4px", borderBottom: "1px solid #e5e0f0", fontSize: "12px" }}>
+                            <span style={{ color: "#8b5cf6", fontWeight: 600, whiteSpace: "nowrap", minWidth: "110px", direction: "ltr", textAlign: "right" }}>{v.date}</span>
+                            <span style={{ flex: 1, color: "#555" }}>{v.label}</span>
+                            <button onClick={() => {
+                              if (confirm(`לשחזר את הגאנט לגרסה מ-${v.date}?\n(הגרסה הנוכחית תישמר אוטומטית)`)) {
+                                // Save current as version before restoring
+                                setGanttVersions((prev) => [...prev, {
+                                  id: uid(),
+                                  date: new Date().toLocaleString("he-IL"),
+                                  label: "שמירה אוטומטית לפני שחזור",
+                                  phases: JSON.parse(JSON.stringify(phases)),
+                                }]);
+                                setPhases(v.phases);
+                              }
+                            }} style={{ ...BTN("#8b5cf6"), fontSize: "10px", padding: "3px 8px", whiteSpace: "nowrap" }}>↩ שחזר</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ overflowX: "auto" }}>
                     <div style={{ minWidth: Math.max(500, totalDays * 2.5) }}>
                       <div style={{ position: "relative", height: "22px", marginBottom: "4px", borderBottom: "1px solid #e5e5e5" }}>
