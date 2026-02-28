@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "1.0.7";
+const APP_VERSION = "1.0.8";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -88,15 +88,18 @@ const SYSTEM_PROMPT = `אתה יועץ בנייה מקצועי ומנוסה מא
 כללים: 1) עברית 2) ישיר אך מכבד 3) אינטרס בעל הבית 4) מספרים 5) דיפלומטי
 
 🔧 עריכת גאנט מהצ'אט:
+⚠️ חשוב מאוד: השתמש בתאריך היום שמופיע בהקשר למטה (בסעיף "תאריך היום"). כל תאריך שתייצר חייב להיות הגיוני ביחס להיום. אל תנחש תאריכים - חשב אותם מהתאריכים הקיימים בגאנט ומתאריך היום.
 כשהמשתמש מבקש לשנות את לוח הזמנים, להזיז שלב, להוסיף שלב, למחוק שלב, או לעדכן סטטוס/קבלן - הוסף בסוף התשובה פקודות בפורמט הבא (שורה חדשה לכל פקודה):
-[GANTT:ADD|שם שלב|תאריך-התחלה|תאריך-סיום|צבע-hex]
+[GANTT:ADD|שם שלב|YYYY-MM-DD|YYYY-MM-DD|צבע-hex]
 [GANTT:UPDATE|שם שלב קיים|שדה=ערך|שדה=ערך]
   שדות: name, start, end, status(pending/active/done/delayed), contractor, progress(0-100), color
 [GANTT:DELETE|שם שלב]
-[GANTT:MOVE|שם שלב|תאריך-התחלה-חדש|תאריך-סיום-חדש]
-דוגמא: המשתמש אומר "הקדם את שלב הטיח ב-2 שבועות" → ענה בטקסט רגיל, ובסוף:
-[GANTT:MOVE|טיח וריצוף|2025-06-01|2025-07-01]
-חשוב: השתמש בשמות השלבים בדיוק כפי שמופיעים בהקשר. אל תמציא שלבים.`;
+[GANTT:MOVE|שם שלב|YYYY-MM-DD-התחלה|YYYY-MM-DD-סיום]
+דוגמאות:
+- "הוסף שלב בדיקות" → חשב תאריכים מהשלבים הקיימים, הוסף [GANTT:ADD|בדיקות|2026-03-15|2026-04-05|#f97316]
+- "הקדם את הטיח ב-2 שבועות" → קח את התאריכים הנוכחיים מההקשר, חסר 14 יום, הוסף [GANTT:MOVE|טיח וריצוף|תאריך-חדש|תאריך-חדש]
+- "עדכן שלד ל-60%" → [GANTT:UPDATE|שלד ובנייה|progress=60]
+חשוב: השתמש בשמות השלבים בדיוק כפי שמופיעים בהקשר. אל תמציא שלבים. תאריכים תמיד בפורמט YYYY-MM-DD.`;
 
 const PHASES_TEMPLATE = [
   { name: "תכנון ואדריכלות", duration: 60, color: "#6366f1" },
@@ -613,12 +616,18 @@ function App() {
 
   /* ─── Chat ─── */
   const buildCtx = useCallback(() => {
-    let c = "";
+    const today = todayStr();
+    const todayHeb = new Date().toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    let c = `\n\n--- תאריך היום ---\n📅 היום: ${today} (${todayHeb})`;
     if (knowledgeBase.length) { c += "\n\n--- בסיס ידע ---\n"; knowledgeBase.forEach((x, i) => { c += `[${i + 1}] ${x.title}: ${x.content}\n`; }); }
-    if (phases.length) { c += "\n--- שלבים ---\n"; phases.forEach((p) => { c += `${p.name}: ${formatDate(p.start)}-${formatDate(p.end)}, ${stLabels[p.status] || p.status}, קבלן: ${p.contractor || "-"}\n`; }); }
+    if (phases.length) {
+      c += "\n--- שלבי הגאנט (תאריכים בפורמט YYYY-MM-DD) ---\n";
+      phases.forEach((p) => { c += `${p.name}: ${p.start} עד ${p.end}, סטטוס: ${stLabels[p.status] || p.status}, קבלן: ${p.contractor || "-"}, התקדמות: ${p.progress || 0}%\n`; });
+      c += `תאריך התחלת פרויקט: ${projectStart}\n`;
+    }
     if (contractors.length) { c += "\n--- קבלנים ---\n"; contractors.forEach((x) => { c += `${x.name} (${x.role}): ${x.phone}\n`; }); }
     return c;
-  }, [knowledgeBase, phases, contractors]);
+  }, [knowledgeBase, phases, contractors, projectStart]);
 
   const sendMessage = useCallback(async (text) => {
     if (!text.trim() && attachments.length === 0) return;
