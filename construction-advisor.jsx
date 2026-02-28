@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.0.1";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -2044,15 +2044,15 @@ function App() {
                     </div>
                   )}
 
-                  <div style={{ overflowX: "auto" }}>
-                    <div style={{ minWidth: Math.max(500, totalDays * 2.5) }}>
+                  <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                    <div style={{ minWidth: Math.max(600, totalDays * 2.5) }}>
                       {/* Month headers - same flex layout as phase rows for alignment */}
                       <div style={{ display: "flex", alignItems: "center", marginBottom: "4px", borderBottom: "1px solid #e5e5e5" }}>
-                        <div style={{ width: "115px", flexShrink: 0 }} />
+                        <div style={{ width: "120px", flexShrink: 0, position: "sticky", right: 0, zIndex: 3, background: "#f5f0eb" }} />
                         <div style={{ flex: 1, position: "relative", height: "22px" }}>
                           {months.map((m, i) => <div key={i} style={{ position: "absolute", right: `${m.offset}%`, fontSize: "10px", color: "#888", fontWeight: 600, whiteSpace: "nowrap" }}>{m.label}</div>)}
                           <div style={{ position: "absolute", right: `${todayOff}%`, top: 0, bottom: "-4px", width: "1.5px", background: "#ef4444", zIndex: 2, opacity: 0.6 }} />
-                          <div style={{ position: "absolute", right: `${todayOff}%`, top: "-2px", transform: "translateX(50%)", fontSize: "8px", color: "#ef4444", fontWeight: 700, whiteSpace: "nowrap", background: "#fff", padding: "0 2px", borderRadius: "2px" }}>היום</div>
+                          <div style={{ position: "absolute", right: `${todayOff}%`, top: "-2px", transform: "translateX(50%)", fontSize: "8px", color: "#ef4444", fontWeight: 700, whiteSpace: "nowrap", background: "#f5f0eb", padding: "0 2px", borderRadius: "2px" }}>היום</div>
                         </div>
                       </div>
                       {phases.map((phase, idx) => {
@@ -2091,7 +2091,7 @@ function App() {
                               transition: "border-top 0.15s, opacity 0.15s",
                             }}
                           >
-                            <div style={{ width: "115px", flexShrink: 0, paddingLeft: "4px", display: "flex", alignItems: "center", gap: "2px" }}>
+                            <div style={{ width: "120px", flexShrink: 0, paddingLeft: "4px", display: "flex", alignItems: "center", gap: "2px", position: "sticky", right: 0, zIndex: 3, background: "#f5f0eb" }}>
                               <div style={{ display: "flex", flexDirection: "column", gap: "0px", flexShrink: 0 }}
                                 onClick={(e) => e.stopPropagation()}>
                                 <button onClick={(e) => { e.stopPropagation(); if (idx === 0) return; setPhases((p) => { const a = [...p]; [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]; return a; }); }}
