@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "1.0.9";
+const APP_VERSION = "1.1.0";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -540,6 +540,11 @@ function App() {
   const [showBackup, setShowBackup] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showGanttHistory, setShowGanttHistory] = useState(false);
+  const [ganttChat, setGanttChat] = useState([]);
+  const [ganttInput, setGanttInput] = useState("");
+  const [ganttLoading, setGanttLoading] = useState(false);
+  const ganttChatRef = useRef(null);
+  const ganttInputRef = useRef(null);
   const [settingsTab, setSettingsTab] = useState("anthropic");
 
   // Backup tracking
@@ -813,52 +818,7 @@ function App() {
       }
 
       // Parse and apply Gantt commands from AI response
-      const ganttCmds = [];
-      const ganttRegex = /\[GANTT:(ADD|UPDATE|DELETE|MOVE)\|(.+?)\]/g;
-      let gMatch;
-      while ((gMatch = ganttRegex.exec(aText)) !== null) {
-        ganttCmds.push({ action: gMatch[1], params: gMatch[2].split("|").map((s) => s.trim()) });
-      }
-      // Clean Gantt commands from displayed text
-      const cleanText = ganttCmds.length > 0 ? aText.replace(/\n?\[GANTT:[^\]]+\]/g, "").trim() : aText;
-
-      if (ganttCmds.length > 0) {
-        // Save version snapshot before applying changes
-        setGanttVersions((prev) => [...prev.slice(-19), {
-          id: uid(),
-          date: new Date().toLocaleString("he-IL"),
-          label: ganttCmds.map((c) => `${c.action}: ${c.params[0]}`).join(", "),
-          phases: JSON.parse(JSON.stringify(phases)),
-        }]);
-
-        setPhases((prev) => {
-          let updated = [...prev];
-          ganttCmds.forEach((cmd) => {
-            const [p0, p1, p2, p3] = cmd.params;
-            if (cmd.action === "ADD") {
-              updated.push({ id: uid(), name: p0, start: p1, end: p2, color: p3 || "#6366f1", status: "pending", contractor: "", progress: 0 });
-            } else if (cmd.action === "DELETE") {
-              updated = updated.filter((ph) => !ph.name.includes(p0));
-            } else if (cmd.action === "MOVE") {
-              updated = updated.map((ph) => ph.name.includes(p0) ? { ...ph, start: p1, end: p2 } : ph);
-            } else if (cmd.action === "UPDATE") {
-              const fields = cmd.params.slice(1);
-              updated = updated.map((ph) => {
-                if (!ph.name.includes(p0)) return ph;
-                const copy = { ...ph };
-                fields.forEach((f) => {
-                  const [key, ...rest] = f.split("=");
-                  const val = rest.join("=");
-                  if (key === "progress") copy.progress = parseInt(val, 10) || 0;
-                  else if (key && val) copy[key.trim()] = val.trim();
-                });
-                return copy;
-              });
-            }
-          });
-          return updated;
-        });
-      }
+      const { cleanText, ganttCmds } = applyGanttCommands(aText);
 
       const aMsg = { role: "assistant", content: cleanText, apiContent: aText, usedSearch, ganttCmds: ganttCmds.length > 0 ? ganttCmds : undefined };
       setMessages([...newMsgs, aMsg]);
@@ -907,7 +867,7 @@ function App() {
       setMessages([...newMsgs, { role: "assistant", content: errMsg }]);
     }
     setLoading(false);
-  }, [attachments, messages, buildCtx, setDocuments, provider, anthropicKey, openaiKey, geminiKey, phases, setPhases, setGanttVersions]);
+  }, [attachments, messages, buildCtx, setDocuments, provider, anthropicKey, openaiKey, geminiKey, applyGanttCommands]);
 
   /* ─── Gantt ─── */
   const initPhases = useCallback(() => {
@@ -929,6 +889,113 @@ function App() {
     min.setDate(min.getDate() - 7); max.setDate(max.getDate() + 14);
     return { minDate: min.toISOString().split("T")[0], totalDays: daysBetween(min.toISOString().split("T")[0], max.toISOString().split("T")[0]) };
   }, [phases]);
+
+  /* ─── Shared: parse & apply Gantt commands ─── */
+  const applyGanttCommands = useCallback((aText) => {
+    const ganttCmds = [];
+    const ganttRegex = /\[GANTT:(ADD|UPDATE|DELETE|MOVE)\|(.+?)\]/g;
+    let gMatch;
+    while ((gMatch = ganttRegex.exec(aText)) !== null) {
+      ganttCmds.push({ action: gMatch[1], params: gMatch[2].split("|").map((s) => s.trim()) });
+    }
+    const cleanText = ganttCmds.length > 0 ? aText.replace(/\n?\[GANTT:[^\]]+\]/g, "").trim() : aText;
+
+    if (ganttCmds.length > 0) {
+      setGanttVersions((prev) => [...prev.slice(-19), {
+        id: uid(), date: new Date().toLocaleString("he-IL"),
+        label: ganttCmds.map((c) => `${c.action}: ${c.params[0]}`).join(", "),
+        phases: JSON.parse(JSON.stringify(phases)),
+      }]);
+      setPhases((prev) => {
+        let updated = [...prev];
+        ganttCmds.forEach((cmd) => {
+          const [p0, p1, p2, p3] = cmd.params;
+          if (cmd.action === "ADD") {
+            updated.push({ id: uid(), name: p0, start: p1, end: p2, color: p3 || "#6366f1", status: "pending", contractor: "", progress: 0 });
+          } else if (cmd.action === "DELETE") {
+            updated = updated.filter((ph) => !ph.name.includes(p0));
+          } else if (cmd.action === "MOVE") {
+            updated = updated.map((ph) => ph.name.includes(p0) ? { ...ph, start: p1, end: p2 } : ph);
+          } else if (cmd.action === "UPDATE") {
+            const fields = cmd.params.slice(1);
+            updated = updated.map((ph) => {
+              if (!ph.name.includes(p0)) return ph;
+              const copy = { ...ph };
+              fields.forEach((f) => {
+                const [key, ...rest] = f.split("=");
+                const val = rest.join("=");
+                if (key === "progress") copy.progress = parseInt(val, 10) || 0;
+                else if (key && val) copy[key.trim()] = val.trim();
+              });
+              return copy;
+            });
+          }
+        });
+        return updated;
+      });
+    }
+    return { cleanText, ganttCmds };
+  }, [phases, setPhases, setGanttVersions]);
+
+  /* ─── Gantt inline chat ─── */
+  const sendGanttMessage = useCallback(async (text) => {
+    if (!text.trim() || ganttLoading) return;
+    const userMsg = { role: "user", text };
+    const newChat = [...ganttChat, userMsg];
+    setGanttChat([...newChat, { role: "assistant", text: "", loading: true }]);
+    setGanttInput(""); setGanttLoading(true);
+    setTimeout(() => ganttChatRef.current?.scrollTo(0, ganttChatRef.current.scrollHeight), 50);
+
+    try {
+      const sysPrompt = buildSystemPrompt() + "\n\n⚡ אתה עכשיו בצ'אט של עריכת גאנט. תשובות קצרות ולעניין. כשצריך שינוי - בצע אותו עם פקודות GANTT." + buildCtx();
+      const chatHistory = ganttChat.filter((m) => !m.loading).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text }));
+
+      let aText = "";
+      const doFetch = async (url, opts) => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 60000);
+        try { const r = await fetch(url, { ...opts, signal: ctrl.signal }); clearTimeout(t); return r; }
+        catch (e) { clearTimeout(t); throw e; }
+      };
+
+      if (provider === "anthropic") {
+        const resp = await doFetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2025-04-14", "anthropic-dangerous-direct-browser-access": "true" },
+          body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 2000, system: sysPrompt, messages: [...chatHistory, { role: "user", content: text }] }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        aText = data.content?.filter((b) => b.type === "text").map((b) => b.text).join("\n") || "שגיאה";
+      } else if (provider === "openai") {
+        const resp = await doFetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
+          body: JSON.stringify({ model: "gpt-4o", max_tokens: 2000, messages: [{ role: "system", content: sysPrompt }, ...chatHistory.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: text }] }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        aText = data.choices?.[0]?.message?.content || "שגיאה";
+      } else if (provider === "gemini") {
+        const gemHist = chatHistory.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+        const resp = await doFetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ systemInstruction: { parts: [{ text: sysPrompt }] }, contents: [...gemHist, { role: "user", parts: [{ text }] }], tools: [{ googleSearch: {} }] }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        aText = data.candidates?.[0]?.content?.parts?.filter((p) => p.text).map((p) => p.text).join("\n") || "שגיאה";
+      }
+
+      const { cleanText, ganttCmds } = applyGanttCommands(aText);
+      setGanttChat([...newChat, { role: "assistant", text: cleanText, ganttCmds: ganttCmds.length > 0 ? ganttCmds : undefined }]);
+    } catch (e) {
+      setGanttChat([...newChat, { role: "assistant", text: "❌ " + e.message }]);
+    }
+    setGanttLoading(false);
+    setTimeout(() => ganttChatRef.current?.scrollTo(0, ganttChatRef.current.scrollHeight), 50);
+  }, [ganttChat, ganttLoading, provider, anthropicKey, openaiKey, geminiKey, buildCtx, applyGanttCommands]);
 
   const openWhatsApp = useCallback((phone, text) => {
     const c = phone.replace(/[^0-9]/g, "");
@@ -1540,7 +1607,8 @@ function App() {
 
         {/* ═══ GANTT TAB ═══ */}
         {activeTab === "gantt" && (
-          <div style={{ flex: 1, padding: "14px", overflowY: "auto" }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ flex: 1, padding: "14px", overflowY: "auto", minHeight: 0 }}>
             {phases.length === 0 ? (
               <div style={{ ...CARD, textAlign: "center", maxWidth: 460, margin: "40px auto", padding: "28px" }}>
                 <div style={{ fontSize: "36px", marginBottom: "8px" }}>📊</div>
@@ -1640,6 +1708,52 @@ function App() {
                 </>
               );
             })()}
+          </div>
+
+          {/* ─── Gantt inline chat ─── */}
+          <div style={{ borderTop: "2px solid #e5e5e5", background: "#fff", flexShrink: 0, display: "flex", flexDirection: "column", maxHeight: ganttChat.length > 0 ? "45%" : "auto" }}>
+            {ganttChat.length > 0 && (
+              <div ref={ganttChatRef} style={{ flex: 1, overflowY: "auto", padding: "8px 12px", minHeight: 0 }}>
+                {ganttChat.map((m, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", marginBottom: "4px" }}>
+                    <div style={{
+                      background: m.role === "user" ? "#1a3a4a" : m.loading ? "#f5f0eb" : "#f0faf5",
+                      color: m.role === "user" ? "#fff" : "#2c2c2c",
+                      borderRadius: m.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+                      padding: "8px 12px", maxWidth: "85%", fontSize: "12.5px", lineHeight: 1.5,
+                    }}>
+                      {m.loading ? <span style={{ color: "#999" }}>⏳ חושב...</span> : (
+                        <>
+                          {m.ganttCmds && <div style={{ ...TAG("#fef3c7", "#92400e"), marginBottom: "4px", fontSize: "10px" }}>📊 {m.ganttCmds.length} {m.ganttCmds.length === 1 ? "שינוי" : "שינויים"} בוצעו</div>}
+                          {formatMsg(m.text)}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: "6px", padding: "8px 12px", alignItems: "center", background: "#fafafa", borderTop: ganttChat.length > 0 ? "1px solid #eee" : "none" }}>
+              <div style={{ fontSize: "12px", color: "#2d8a6e", fontWeight: 700, flexShrink: 0 }}>📊</div>
+              <input
+                ref={ganttInputRef}
+                value={ganttInput}
+                onChange={(e) => setGanttInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendGanttMessage(ganttInput); } }}
+                placeholder='עדכן גאנט... (למשל: "הזז שלד לעוד שבועיים", "הוסף שלב בדיקות")'
+                disabled={ganttLoading || (!anthropicKey && !openaiKey && !geminiKey)}
+                style={{ ...INP, fontSize: "12.5px", padding: "8px 10px", borderRadius: "10px", border: "1.5px solid #e0e0e0" }}
+              />
+              <button
+                onClick={() => sendGanttMessage(ganttInput)}
+                disabled={ganttLoading || !ganttInput.trim()}
+                style={{ ...BTN(ganttLoading ? "#ccc" : "#2d8a6e"), fontSize: "13px", padding: "8px 14px", flexShrink: 0 }}
+              >{ganttLoading ? "⏳" : "🚀"}</button>
+              {ganttChat.length > 0 && (
+                <button onClick={() => setGanttChat([])} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "11px", color: "#999", flexShrink: 0 }} title="נקה צ'אט">✕</button>
+              )}
+            </div>
+          </div>
           </div>
         )}
 
