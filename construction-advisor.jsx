@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -94,10 +94,12 @@ const SYSTEM_PROMPT_BASE = `אתה יועץ בנייה מקצועי ומנוסה
   שדות: name, start, end, status(pending/active/done/delayed), contractor, progress(0-100), color
 [GANTT:DELETE|שם שלב]
 [GANTT:MOVE|שם שלב|YYYY-MM-DD-התחלה|YYYY-MM-DD-סיום]
+[GANTT:REORDER|שם שלב 1|שם שלב 2|שם שלב 3|...] - סדר מחדש את כל השלבים לפי הרשימה הזו
 דוגמאות:
 - "הוסף שלב בדיקות" → חשב תאריכים מהשלבים הקיימים, הוסף [GANTT:ADD|בדיקות|2026-03-15|2026-04-05|#f97316]
 - "הקדם את הטיח ב-2 שבועות" → קח את התאריכים הנוכחיים מההקשר, חסר 14 יום, הוסף [GANTT:MOVE|טיח וריצוף|תאריך-חדש|תאריך-חדש]
 - "עדכן שלד ל-60%" → [GANTT:UPDATE|שלד ובנייה|progress=60]
+- "העבר שלד ובנייה לפני אינסטלציה" → [GANTT:REORDER|...|שלד ובנייה|אינסטלציה וחשמל|...]  (רשימה מלאה של כל השלבים בסדר הרצוי)
 חשוב: השתמש בשמות השלבים בדיוק כפי שמופיעים בהקשר. אל תמציא שלבים. תאריכים תמיד בפורמט YYYY-MM-DD.`;
 
 // Dynamic system prompt with live date injected at the top
@@ -543,6 +545,8 @@ function App() {
   const [ganttChat, setGanttChat] = useState([]);
   const [ganttInput, setGanttInput] = useState("");
   const [ganttLoading, setGanttLoading] = useState(false);
+  const [dragPhaseId, setDragPhaseId] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
   const ganttChatRef = useRef(null);
   const ganttInputRef = useRef(null);
   const [settingsTab, setSettingsTab] = useState("anthropic");
@@ -893,7 +897,7 @@ function App() {
   /* ─── Shared: parse & apply Gantt commands ─── */
   const applyGanttCommands = useCallback((aText) => {
     const ganttCmds = [];
-    const ganttRegex = /\[GANTT:(ADD|UPDATE|DELETE|MOVE)\|(.+?)\]/g;
+    const ganttRegex = /\[GANTT:(ADD|UPDATE|DELETE|MOVE|REORDER)\|(.+?)\]/g;
     let gMatch;
     while ((gMatch = ganttRegex.exec(aText)) !== null) {
       ganttCmds.push({ action: gMatch[1], params: gMatch[2].split("|").map((s) => s.trim()) });
@@ -929,6 +933,16 @@ function App() {
               });
               return copy;
             });
+          } else if (cmd.action === "REORDER") {
+            const names = cmd.params;
+            const reordered = [];
+            names.forEach((n) => {
+              const found = updated.find((ph) => ph.name.includes(n));
+              if (found) reordered.push(found);
+            });
+            // Append any phases not mentioned in the reorder list
+            updated.forEach((ph) => { if (!reordered.find((r) => r.id === ph.id)) reordered.push(ph); });
+            updated = reordered;
           }
         });
         return updated;
@@ -1679,14 +1693,56 @@ function App() {
                           <div style={{ position: "absolute", right: `${todayOff}%`, top: "-2px", transform: "translateX(50%)", fontSize: "8px", color: "#ef4444", fontWeight: 700, whiteSpace: "nowrap", background: "#fff", padding: "0 2px", borderRadius: "2px" }}>היום</div>
                         </div>
                       </div>
-                      {phases.map((phase) => {
+                      {phases.map((phase, idx) => {
                         const sOff = clamp(daysBetween(minDate, phase.start) / totalDays * 100, 0, 100);
                         const w = clamp(daysBetween(phase.start, phase.end) / totalDays * 100, 0.5, 100 - sOff);
+                        const isDragging = dragPhaseId === phase.id;
+                        const isOver = dragOverIdx === idx && dragPhaseId !== phase.id;
                         return (
-                          <div key={phase.id} onClick={() => setEditPhase({ ...phase })} style={{ display: "flex", alignItems: "center", marginBottom: "2px", cursor: "pointer", padding: "3px 0" }}>
-                            <div style={{ width: "115px", flexShrink: 0, paddingLeft: "6px" }}>
-                              <div style={{ fontSize: "11.5px", fontWeight: 600, color: "#1a3a4a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{phase.name}</div>
-                              <div style={{ fontSize: "9.5px", color: "#999" }}>{phase.contractor || ""}</div>
+                          <div
+                            key={phase.id}
+                            draggable
+                            onDragStart={(e) => { setDragPhaseId(phase.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", phase.id); }}
+                            onDragEnd={() => { setDragPhaseId(null); setDragOverIdx(null); }}
+                            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverIdx(idx); }}
+                            onDragLeave={() => setDragOverIdx(null)}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const fromId = dragPhaseId;
+                              if (!fromId || fromId === phase.id) { setDragPhaseId(null); setDragOverIdx(null); return; }
+                              setPhases((prev) => {
+                                const fromIdx = prev.findIndex((p) => p.id === fromId);
+                                if (fromIdx === -1) return prev;
+                                const item = prev[fromIdx];
+                                const without = prev.filter((_, i) => i !== fromIdx);
+                                const toIdx = without.findIndex((p) => p.id === phase.id);
+                                without.splice(toIdx === -1 ? without.length : toIdx, 0, item);
+                                return without;
+                              });
+                              setDragPhaseId(null); setDragOverIdx(null);
+                            }}
+                            onClick={() => { if (!dragPhaseId) setEditPhase({ ...phase }); }}
+                            style={{
+                              display: "flex", alignItems: "center", marginBottom: "2px", cursor: isDragging ? "grabbing" : "grab", padding: "3px 0",
+                              opacity: isDragging ? 0.4 : 1,
+                              borderTop: isOver ? "2px solid #2d8a6e" : "2px solid transparent",
+                              transition: "border-top 0.15s, opacity 0.15s",
+                            }}
+                          >
+                            <div style={{ width: "115px", flexShrink: 0, paddingLeft: "4px", display: "flex", alignItems: "center", gap: "2px" }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "0px", flexShrink: 0 }}
+                                onClick={(e) => e.stopPropagation()}>
+                                <button onClick={(e) => { e.stopPropagation(); if (idx === 0) return; setPhases((p) => { const a = [...p]; [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]; return a; }); }}
+                                  disabled={idx === 0}
+                                  style={{ background: "none", border: "none", cursor: idx > 0 ? "pointer" : "default", fontSize: "8px", padding: "0 2px", lineHeight: 1, color: idx > 0 ? "#888" : "#ddd" }}>▲</button>
+                                <button onClick={(e) => { e.stopPropagation(); if (idx === phases.length - 1) return; setPhases((p) => { const a = [...p]; [a[idx], a[idx + 1]] = [a[idx + 1], a[idx]]; return a; }); }}
+                                  disabled={idx === phases.length - 1}
+                                  style={{ background: "none", border: "none", cursor: idx < phases.length - 1 ? "pointer" : "default", fontSize: "8px", padding: "0 2px", lineHeight: 1, color: idx < phases.length - 1 ? "#888" : "#ddd" }}>▼</button>
+                              </div>
+                              <div style={{ overflow: "hidden", flex: 1 }}>
+                                <div style={{ fontSize: "11.5px", fontWeight: 600, color: "#1a3a4a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{phase.name}</div>
+                                <div style={{ fontSize: "9.5px", color: "#999" }}>{phase.contractor || ""}</div>
+                              </div>
                             </div>
                             <div style={{ flex: 1, position: "relative", height: "26px" }}>
                               <div style={{ position: "absolute", right: `${todayOff}%`, top: 0, bottom: 0, width: "1.5px", background: "#ef4444", zIndex: 2, opacity: 0.3 }} />
