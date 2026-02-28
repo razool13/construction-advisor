@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "2.0.0";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -196,7 +196,7 @@ const formatMsg = (text) =>
 /* ═══════════════════════════════════════════
    BACKUP / RESTORE - defined outside for stable reference
    ═══════════════════════════════════════════ */
-function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, projectStart, setKnowledgeBase, setPhases, setContractors, setDocuments, setProjectStart, lastBackup, updateLastBackup }) {
+function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, projectStart, budget, dailyLogs, punchList, setKnowledgeBase, setPhases, setContractors, setDocuments, setProjectStart, setBudget, setDailyLogs, setPunchList, lastBackup, updateLastBackup }) {
   const [importStatus, setImportStatus] = useState("");
   const fileRef = useRef(null);
 
@@ -221,6 +221,20 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
       if (d.actionItems?.length) { t += `צעדים:\n`; d.actionItems.forEach(a => { t += `  ${a.done ? "V" : " "} ${a.text}\n`; }); }
       if (d.notes) t += `הערות: ${d.notes}\n`;
     });
+    if (budget.length) {
+      const totalP = budget.reduce((s, b) => s + (b.planned || 0), 0);
+      const totalA = budget.reduce((s, b) => s + (b.actual || 0), 0);
+      t += `\n## תקציב\nסה"כ מתוכנן: ₪${totalP.toLocaleString()} | בפועל: ₪${totalA.toLocaleString()} | ${totalA <= totalP ? "בתקציב" : "חריגה: ₪" + (totalA - totalP).toLocaleString()}\n`;
+      budget.forEach(b => { t += `- ${b.category}: ₪${(b.planned || 0).toLocaleString()} / ₪${(b.actual || 0).toLocaleString()}${b.notes ? " | " + b.notes : ""}\n`; });
+    }
+    if (punchList.length) {
+      t += `\n## ליקויים (${punchList.filter(p => !p.resolved).length} פתוחים)\n`;
+      punchList.forEach(p => { t += `- ${p.resolved ? "[V]" : "[ ]"} ${p.title} (${p.phase || "-"}) ${p.severity}\n`; });
+    }
+    if (dailyLogs.length) {
+      t += `\n## יומן אתר (${dailyLogs.length} רשומות)\n`;
+      dailyLogs.slice(-5).forEach(l => { t += `- ${l.date} ${l.weather} | ${l.workers} עובדים | ${l.notes || ""}\n`; });
+    }
     return t;
   };
 
@@ -312,7 +326,7 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
       const dateStr = ts.toLocaleDateString("he-IL").replace(/\./g, "-");
       const timeStr = ts.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }).replace(":", "-");
       const stamp = `${dateStr}_${timeStr}`;
-      const backup = { version: 2, exportDate: ts.toISOString(), knowledgeBase, phases, contractors, documents, projectStart };
+      const backup = { version: 3, exportDate: ts.toISOString(), knowledgeBase, phases, contractors, documents, projectStart, budget, dailyLogs, punchList };
       const uploadFile = async (name, content, mimeType) => {
         const form = new FormData();
         form.append("metadata", new Blob([JSON.stringify({ name, parents: [folderId] })], { type: "application/json" }));
@@ -346,6 +360,9 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
       if (data.contractors?.length) setContractors(data.contractors);
       if (data.documents?.length) setDocuments(data.documents);
       if (data.projectStart) setProjectStart(data.projectStart);
+      if (data.budget?.length) setBudget(data.budget);
+      if (data.dailyLogs?.length) setDailyLogs(data.dailyLogs);
+      if (data.punchList?.length) setPunchList(data.punchList);
       setDriveStatus("✅ שוחזר!");
     } catch (e) { setDriveStatus("❌ " + e.message); }
     setLoadingDrive(false);
@@ -366,7 +383,7 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
   };
 
   const exportAll = () => {
-    const data = { version: 2, exportDate: new Date().toISOString(), knowledgeBase, phases, contractors, documents, projectStart };
+    const data = { version: 3, exportDate: new Date().toISOString(), knowledgeBase, phases, contractors, documents, projectStart, budget, dailyLogs, punchList };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url;
@@ -396,6 +413,9 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
         if (data.contractors?.length) { setContractors(data.contractors); c += data.contractors.length; }
         if (data.documents?.length) { setDocuments(data.documents); c += data.documents.length; }
         if (data.projectStart) setProjectStart(data.projectStart);
+        if (data.budget?.length) { setBudget(data.budget); c += data.budget.length; }
+        if (data.dailyLogs?.length) { setDailyLogs(data.dailyLogs); c += data.dailyLogs.length; }
+        if (data.punchList?.length) { setPunchList(data.punchList); c += data.punchList.length; }
         setImportStatus(`✅ יובאו ${c} פריטים!`);
       } catch { setImportStatus("❌ שגיאה בקריאת הקובץ"); }
     };
@@ -498,7 +518,7 @@ function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, p
           <button onClick={() => {
             if (window.confirm("למחוק הכל? גיבוי אוטומטי יורד לפני המחיקה.")) {
               exportAll();
-              setKnowledgeBase([]); setPhases([]); setContractors([]); setDocuments([]); setProjectStart(todayStr()); onClose();
+              setKnowledgeBase([]); setPhases([]); setContractors([]); setDocuments([]); setProjectStart(todayStr()); setBudget([]); setDailyLogs([]); setPunchList([]); onClose();
             }
           }} style={BTN("#fee2e2", "#dc2626")}>🗑️ איפוס מלא</button>
         </div>
@@ -524,6 +544,9 @@ function App() {
   const [documents, setDocuments] = useStorage("myhouse-documents", []);
   const [projectStart, setProjectStart] = useStorage("myhouse-start-date", todayStr());
   const [ganttVersions, setGanttVersions] = useStorage("myhouse-gantt-versions", []);
+  const [budget, setBudget] = useStorage("myhouse-budget", []);
+  const [dailyLogs, setDailyLogs] = useStorage("myhouse-daily-logs", []);
+  const [punchList, setPunchList] = useStorage("myhouse-punch-list", []);
 
   // UI states
   const [showKB, setShowKB] = useState(false);
@@ -547,6 +570,12 @@ function App() {
   const [ganttLoading, setGanttLoading] = useState(false);
   const [dragPhaseId, setDragPhaseId] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
+  const [editBudget, setEditBudget] = useState(null);
+  const [editLog, setEditLog] = useState(null);
+  const [editPunch, setEditPunch] = useState(null);
+  const [undoStack, setUndoStack] = useState([]);
   const ganttChatRef = useRef(null);
   const ganttInputRef = useRef(null);
   const [settingsTab, setSettingsTab] = useState("anthropic");
@@ -640,8 +669,13 @@ function App() {
       c += `תאריך התחלת פרויקט: ${projectStart}\n`;
     }
     if (contractors.length) { c += "\n--- קבלנים ---\n"; contractors.forEach((x) => { c += `${x.name} (${x.role}): ${x.phone}\n`; }); }
+    if (budget.length) {
+      const totalP = budget.reduce((s, b) => s + (b.planned || 0), 0);
+      const totalA = budget.reduce((s, b) => s + (b.actual || 0), 0);
+      c += `\n--- תקציב ---\nסה"כ מתוכנן: ₪${totalP.toLocaleString()}, בפועל: ₪${totalA.toLocaleString()}, ${totalA <= totalP ? "בתקציב" : "חריגה של ₪" + (totalA - totalP).toLocaleString()}\n`;
+    }
     return c;
-  }, [knowledgeBase, phases, contractors, projectStart]);
+  }, [knowledgeBase, phases, contractors, projectStart, budget]);
 
   const sendMessage = useCallback(async (text) => {
     if (!text.trim() && attachments.length === 0) return;
@@ -1019,26 +1053,93 @@ function App() {
 
   /* ═══ QUICK EXPORT ═══ */
   const quickExport = useCallback(() => {
-    const data = { version: 2, exportDate: new Date().toISOString(), knowledgeBase, phases, contractors, documents, projectStart };
+    const data = { version: 3, exportDate: new Date().toISOString(), knowledgeBase, phases, contractors, documents, projectStart, budget, dailyLogs, punchList };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url;
     a.download = `backup-project-${new Date().toLocaleDateString("he-IL").replace(/\./g, "-")}.json`;
     a.click(); URL.revokeObjectURL(url);
     updateLastBackup();
-  }, [knowledgeBase, phases, contractors, documents, projectStart, updateLastBackup]);
+  }, [knowledgeBase, phases, contractors, documents, projectStart, budget, dailyLogs, punchList, updateLastBackup]);
 
   // Backup age indicator
   const backupAge = lastBackup ? Math.floor((Date.now() - new Date(lastBackup).getTime()) / 86400000) : -1;
   const backupColor = backupAge < 0 ? "#ef4444" : backupAge < 1 ? "#22c55e" : backupAge < 7 ? "#f59e0b" : "#ef4444";
   const backupLabel = backupAge < 0 ? "לא גובה" : backupAge < 1 ? "גובה היום" : `גובה לפני ${backupAge} ימים`;
 
+  /* ═══ UNDO SYSTEM ═══ */
+  const pushUndo = useCallback((label, restore) => {
+    setUndoStack((prev) => [...prev.slice(-9), { label, restore, time: Date.now() }]);
+  }, []);
+
+  /* ═══ SEARCH ═══ */
+  const searchResults = searchQuery.trim().length < 2 ? [] : (() => {
+    const q = searchQuery.trim().toLowerCase();
+    const results = [];
+    phases.forEach((p) => { if (p.name.toLowerCase().includes(q) || (p.contractor || "").toLowerCase().includes(q)) results.push({ type: "phase", icon: "📊", title: p.name, sub: `${stLabels[p.status]} | ${p.contractor || "-"}`, data: p }); });
+    contractors.forEach((c) => { if (c.name.toLowerCase().includes(q) || (c.role || "").toLowerCase().includes(q) || (c.phone || "").includes(q)) results.push({ type: "contractor", icon: "👷", title: c.name, sub: `${c.role} | ${c.phone}`, data: c }); });
+    documents.forEach((d) => { if (d.title.toLowerCase().includes(q) || (d.analysis || "").toLowerCase().includes(q)) results.push({ type: "doc", icon: "📄", title: d.title, sub: `${d.status} | ${d.date}`, data: d }); });
+    knowledgeBase.forEach((k) => { if (k.title.toLowerCase().includes(q) || k.content.toLowerCase().includes(q)) results.push({ type: "kb", icon: "📚", title: k.title, sub: k.content.slice(0, 60), data: k }); });
+    budget.forEach((b) => { if (b.category.toLowerCase().includes(q) || (b.notes || "").toLowerCase().includes(q)) results.push({ type: "budget", icon: "💰", title: b.category, sub: `תקציב: ₪${(b.planned || 0).toLocaleString()} | בפועל: ₪${(b.actual || 0).toLocaleString()}`, data: b }); });
+    punchList.forEach((p) => { if (p.title.toLowerCase().includes(q) || (p.phase || "").toLowerCase().includes(q)) results.push({ type: "punch", icon: "🔧", title: p.title, sub: `${p.phase || "-"} | ${p.resolved ? "טופל" : "פתוח"}`, data: p }); });
+    return results.slice(0, 15);
+  })();
+
+  /* ═══ NOTIFICATIONS ═══ */
+  const notifications = (() => {
+    const n = [];
+    const today = todayStr();
+    // Overdue phases
+    phases.forEach((p) => { if (p.status !== "done" && p.end < today) n.push({ icon: "⚠️", text: `${p.name} - מעבר לדד-ליין (${formatDate(p.end)})`, type: "danger" }); });
+    // Starting soon
+    phases.forEach((p) => { if (p.status === "pending" && p.start <= addDays(today, 7) && p.start >= today) n.push({ icon: "📅", text: `${p.name} - מתחיל ב-${formatDate(p.start)}`, type: "info" }); });
+    // Overdue action items
+    documents.forEach((d) => { (d.actionItems || []).forEach((a) => { if (!a.done && a.dueDate && a.dueDate < today) n.push({ icon: "🔴", text: `משימה: "${a.text}" (${d.title})`, type: "danger" }); }); });
+    // Open punch items
+    const openPunch = punchList.filter((p) => !p.resolved).length;
+    if (openPunch > 0) n.push({ icon: "🔧", text: `${openPunch} ליקויים פתוחים לטיפול`, type: "warn" });
+    // Backup reminder
+    const backupDays = lastBackup ? Math.floor((Date.now() - new Date(lastBackup).getTime()) / 86400000) : -1;
+    if (backupDays < 0 || backupDays >= 7) n.push({ icon: "💾", text: backupDays < 0 ? "לא בוצע גיבוי מעולם" : `גיבוי אחרון לפני ${backupDays} ימים`, type: "warn" });
+    return n;
+  })();
+
+  /* ═══ DASHBOARD DATA ═══ */
+  const dashData = (() => {
+    const totalPhases = phases.length;
+    const donePhases = phases.filter((p) => p.status === "done").length;
+    const activePhases = phases.filter((p) => p.status === "active").length;
+    const delayedPhases = phases.filter((p) => p.status === "delayed").length;
+    const overallProgress = totalPhases > 0 ? Math.round(phases.reduce((s, p) => s + (p.progress || 0), 0) / totalPhases) : 0;
+    const totalBudget = budget.reduce((s, b) => s + (b.planned || 0), 0);
+    const totalActual = budget.reduce((s, b) => s + (b.actual || 0), 0);
+    const budgetDiff = totalBudget - totalActual;
+    const openDocs = documents.filter((d) => d.status !== "הושלם").length;
+    const openPunch = punchList.filter((p) => !p.resolved).length;
+    return { totalPhases, donePhases, activePhases, delayedPhases, overallProgress, totalBudget, totalActual, budgetDiff, openDocs, openPunch };
+  })();
+
+  /* ═══ EXPORT ═══ */
+  const exportCSV = useCallback(() => {
+    let csv = "\uFEFF"; // BOM for Hebrew
+    csv += "סוג,שם,תאריך התחלה,תאריך סיום,סטטוס,קבלן,התקדמות,תקציב מתוכנן,תקציב בפועל\n";
+    phases.forEach((p) => { csv += `שלב,"${p.name}",${p.start},${p.end},${stLabels[p.status]},${p.contractor || "-"},${p.progress || 0}%,,\n`; });
+    budget.forEach((b) => { csv += `תקציב,"${b.category}",,,${b.phase || "-"},,,${b.planned || 0},${b.actual || 0}\n`; });
+    punchList.forEach((p) => { csv += `ליקוי,"${p.title}",${p.date || ""},,"${p.resolved ? "טופל" : "פתוח"}","${p.phase || "-"}",,,\n`; });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `project-report-${todayStr()}.csv`; a.click(); URL.revokeObjectURL(url);
+  }, [phases, budget, punchList]);
+
   /* ═══ TABS CONFIG ═══ */
   const tabs = [
+    { id: "dash", icon: "🏠", label: "דשבורד" },
     { id: "chat", icon: "💬", label: "יועץ" },
     { id: "docs", icon: "📄", label: `מסמכים${documents.length ? ` (${documents.length})` : ""}` },
     { id: "gantt", icon: "📊", label: "גאנט" },
+    { id: "budget", icon: "💰", label: "תקציב" },
     { id: "contractors", icon: "👷", label: "קבלנים" },
+    { id: "log", icon: "📝", label: "יומן" },
   ];
 
   /* ═══════════════════════════════════════════
@@ -1134,7 +1235,9 @@ function App() {
       {showBackup && (
         <BackupPanel onClose={() => setShowBackup(false)}
           knowledgeBase={knowledgeBase} phases={phases} contractors={contractors} documents={documents} projectStart={projectStart}
+          budget={budget} dailyLogs={dailyLogs} punchList={punchList}
           setKnowledgeBase={setKnowledgeBase} setPhases={setPhases} setContractors={setContractors} setDocuments={setDocuments} setProjectStart={setProjectStart}
+          setBudget={setBudget} setDailyLogs={setDailyLogs} setPunchList={setPunchList}
           lastBackup={lastBackup} updateLastBackup={updateLastBackup} />
       )}
 
@@ -1401,6 +1504,158 @@ function App() {
         </Overlay>
       )}
 
+      {/* ══════════ BUDGET EDIT OVERLAY ══════════ */}
+      {editBudget && (
+        <Overlay onClose={() => setEditBudget(null)}>
+          <div style={{ padding: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "14px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>💰 {editBudget.id ? "ערוך" : "הוסף"} סעיף תקציב</h3>
+              <button onClick={() => setEditBudget(null)} style={BTN("#f0f0f0", "#555")}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <input value={editBudget.category} onChange={(e) => setEditBudget({ ...editBudget, category: e.target.value })} placeholder="שם סעיף (למשל: עבודות חשמל)" style={INP} />
+              <select value={editBudget.phase || ""} onChange={(e) => setEditBudget({ ...editBudget, phase: e.target.value })} style={{ ...INP, cursor: "pointer" }}>
+                <option value="">-- שלב --</option>
+                {phases.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </select>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, color: "#888" }}>תקציב מתוכנן (₪)</label>
+                  <input type="number" value={editBudget.planned} onChange={(e) => setEditBudget({ ...editBudget, planned: parseInt(e.target.value) || 0 })} style={INP} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, color: "#888" }}>בפועל (₪)</label>
+                  <input type="number" value={editBudget.actual} onChange={(e) => setEditBudget({ ...editBudget, actual: parseInt(e.target.value) || 0 })} style={INP} />
+                </div>
+              </div>
+              <textarea value={editBudget.notes || ""} onChange={(e) => setEditBudget({ ...editBudget, notes: e.target.value })} placeholder="הערות..." rows={2} style={{ ...INP, resize: "vertical" }} />
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button onClick={() => {
+                  if (!editBudget.category.trim()) return;
+                  if (editBudget.id) { setBudget((p) => p.map((b) => b.id === editBudget.id ? editBudget : b)); }
+                  else { setBudget((p) => [...p, { ...editBudget, id: uid() }]); }
+                  setEditBudget(null);
+                }} style={{ ...BTN(), flex: 1 }}>💾 שמור</button>
+                {editBudget.id && <button onClick={() => {
+                  const removed = editBudget;
+                  pushUndo("סעיף תקציב נמחק", () => setBudget((p) => [...p, removed]));
+                  setBudget((p) => p.filter((b) => b.id !== editBudget.id));
+                  setEditBudget(null);
+                }} style={BTN("#fee2e2", "#dc2626")}>🗑️</button>}
+              </div>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* ══════════ DAILY LOG EDIT OVERLAY ══════════ */}
+      {editLog && (
+        <Overlay onClose={() => setEditLog(null)}>
+          <div style={{ padding: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "14px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>📝 {editLog.id ? "ערוך" : "הוסף"} רשומת יומן</h3>
+              <button onClick={() => setEditLog(null)} style={BTN("#f0f0f0", "#555")}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, color: "#888" }}>תאריך</label>
+                  <input type="date" value={editLog.date} onChange={(e) => setEditLog({ ...editLog, date: e.target.value })} style={INP} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, color: "#888" }}>מזג אוויר</label>
+                  <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                    {["☀️", "⛅", "🌧️", "🌪️", "❄️"].map((w) => (
+                      <button key={w} onClick={() => setEditLog({ ...editLog, weather: w })} style={{ background: editLog.weather === w ? "#2d8a6e" : "#f5f0eb", border: "none", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "16px" }}>{w}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, color: "#888" }}>מספר עובדים</label>
+                  <input type="number" value={editLog.workers} onChange={(e) => setEditLog({ ...editLog, workers: parseInt(e.target.value) || 0 })} style={INP} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, color: "#888" }}>שלב</label>
+                  <select value={editLog.phase || ""} onChange={(e) => setEditLog({ ...editLog, phase: e.target.value })} style={{ ...INP, cursor: "pointer" }}>
+                    <option value="">-- שלב --</option>
+                    {phases.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <textarea value={editLog.notes || ""} onChange={(e) => setEditLog({ ...editLog, notes: e.target.value })} placeholder="מה נעשה היום..." rows={3} style={{ ...INP, resize: "vertical" }} />
+              <textarea value={editLog.issues || ""} onChange={(e) => setEditLog({ ...editLog, issues: e.target.value })} placeholder="בעיות / עיכובים (אופציונלי)" rows={2} style={{ ...INP, resize: "vertical", borderColor: "#fecaca" }} />
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button onClick={() => {
+                  if (editLog.id) { setDailyLogs((p) => p.map((l) => l.id === editLog.id ? editLog : l)); }
+                  else { setDailyLogs((p) => [...p, { ...editLog, id: uid() }]); }
+                  setEditLog(null);
+                }} style={{ ...BTN(), flex: 1 }}>💾 שמור</button>
+                {editLog.id && <button onClick={() => {
+                  const removed = editLog;
+                  pushUndo("רשומת יומן נמחקה", () => setDailyLogs((p) => [...p, removed]));
+                  setDailyLogs((p) => p.filter((l) => l.id !== editLog.id));
+                  setEditLog(null);
+                }} style={BTN("#fee2e2", "#dc2626")}>🗑️</button>}
+              </div>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* ══════════ PUNCH-LIST EDIT OVERLAY ══════════ */}
+      {editPunch && (
+        <Overlay onClose={() => setEditPunch(null)}>
+          <div style={{ padding: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "14px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>🔧 {editPunch.id ? "ערוך" : "הוסף"} ליקוי</h3>
+              <button onClick={() => setEditPunch(null)} style={BTN("#f0f0f0", "#555")}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <input value={editPunch.title} onChange={(e) => setEditPunch({ ...editPunch, title: e.target.value })} placeholder="תיאור הליקוי" style={INP} />
+              <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, color: "#888" }}>שלב</label>
+                  <select value={editPunch.phase || ""} onChange={(e) => setEditPunch({ ...editPunch, phase: e.target.value })} style={{ ...INP, cursor: "pointer" }}>
+                    <option value="">-- שלב --</option>
+                    {phases.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "11px", fontWeight: 600, color: "#888" }}>חומרה</label>
+                  <select value={editPunch.severity} onChange={(e) => setEditPunch({ ...editPunch, severity: e.target.value })} style={{ ...INP, cursor: "pointer" }}>
+                    <option value="low">נמוכה</option>
+                    <option value="medium">בינונית</option>
+                    <option value="high">גבוהה</option>
+                  </select>
+                </div>
+              </div>
+              <input type="date" value={editPunch.date || todayStr()} onChange={(e) => setEditPunch({ ...editPunch, date: e.target.value })} style={INP} />
+              <textarea value={editPunch.notes || ""} onChange={(e) => setEditPunch({ ...editPunch, notes: e.target.value })} placeholder="הערות..." rows={2} style={{ ...INP, resize: "vertical" }} />
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", fontWeight: 600, color: "#1a3a4a", cursor: "pointer" }}>
+                <input type="checkbox" checked={editPunch.resolved || false} onChange={(e) => setEditPunch({ ...editPunch, resolved: e.target.checked })} />
+                טופל ✅
+              </label>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button onClick={() => {
+                  if (!editPunch.title.trim()) return;
+                  if (editPunch.id) { setPunchList((p) => p.map((x) => x.id === editPunch.id ? editPunch : x)); }
+                  else { setPunchList((p) => [...p, { ...editPunch, id: uid() }]); }
+                  setEditPunch(null);
+                }} style={{ ...BTN(), flex: 1 }}>💾 שמור</button>
+                {editPunch.id && <button onClick={() => {
+                  const removed = editPunch;
+                  pushUndo("ליקוי נמחק", () => setPunchList((p) => [...p, removed]));
+                  setPunchList((p) => p.filter((x) => x.id !== editPunch.id));
+                  setEditPunch(null);
+                }} style={BTN("#fee2e2", "#dc2626")}>🗑️</button>}
+              </div>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
       {/* ══════════ HEADER ══════════ */}
       <div style={{ background: "linear-gradient(135deg, #1a3a4a 0%, #2d6b5a 50%, #3a8b6e 100%)", padding: "10px 16px", display: "flex", alignItems: "center", gap: "10px", boxShadow: "0 2px 16px rgba(0,0,0,0.15)", flexShrink: 0 }}>
         <div style={{ width: 36, height: 36, borderRadius: "10px", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", flexShrink: 0 }}>🏠</div>
@@ -1408,6 +1663,12 @@ function App() {
           <div style={{ color: "#fff", fontSize: "15px", fontWeight: 700 }}>יועץ הבנייה שלי</div>
         </div>
         <span style={{ color: "rgba(255,255,255,0.5)", fontSize: "10px", fontWeight: 400 }}>v{APP_VERSION}</span>
+        <button onClick={() => setShowSearch((v) => !v)} style={{ background: showSearch ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>🔍</button>
+        {notifications.length > 0 && (
+          <button onClick={() => setActiveTab("dash")} style={{ background: "rgba(239,68,68,0.5)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit", position: "relative" }}>
+            🔔<span style={{ position: "absolute", top: -3, left: -3, background: "#ef4444", borderRadius: "50%", width: 15, height: 15, fontSize: "9px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{notifications.length}</span>
+          </button>
+        )}
         <button onClick={() => { setSettingsTab(provider); setShowSettings(true); }} style={{ background: activeKey ? "rgba(255,255,255,0.15)" : "rgba(239,68,68,0.5)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#fff", padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>⚙️</button>
         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           <button onClick={quickExport} title="ייצוא מהיר" style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px 0 0 8px", color: "#fff", padding: "5px 8px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}>💾</button>
@@ -1437,8 +1698,109 @@ function App() {
         ))}
       </div>
 
+      {/* ══════════ SEARCH BAR ══════════ */}
+      {showSearch && (
+        <div style={{ background: "#fff", padding: "8px 12px", borderBottom: "1px solid #eee", flexShrink: 0 }}>
+          <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} autoFocus placeholder="חפש בכל המערכת..." style={{ ...INP, fontSize: "13px", padding: "8px 12px" }} />
+          {searchResults.length > 0 && (
+            <div style={{ maxHeight: "250px", overflowY: "auto", marginTop: "6px" }}>
+              {searchResults.map((r, i) => (
+                <div key={i} onClick={() => {
+                  if (r.type === "doc") { setViewDoc(r.data); }
+                  else if (r.type === "contractor") { setEditContractor({ ...r.data }); }
+                  else if (r.type === "phase") { setEditPhase({ ...r.data }); }
+                  setShowSearch(false); setSearchQuery("");
+                }} style={{ display: "flex", gap: "8px", padding: "8px 6px", cursor: "pointer", borderBottom: "1px solid #f5f5f5", alignItems: "center" }}>
+                  <span style={{ fontSize: "16px" }}>{r.icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: 600, color: "#1a3a4a" }}>{r.title}</div>
+                    <div style={{ fontSize: "11px", color: "#888", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.sub}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+            <div style={{ fontSize: "12px", color: "#999", textAlign: "center", padding: "12px" }}>לא נמצאו תוצאות</div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════ UNDO TOAST ══════════ */}
+      {undoStack.length > 0 && Date.now() - undoStack[undoStack.length - 1].time < 8000 && (
+        <div style={{ position: "fixed", bottom: 70, left: "50%", transform: "translateX(-50%)", background: "#1a3a4a", color: "#fff", borderRadius: "12px", padding: "8px 16px", fontSize: "12px", display: "flex", alignItems: "center", gap: "10px", zIndex: 999, boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+          <span>↩ {undoStack[undoStack.length - 1].label}</span>
+          <button onClick={() => { const action = undoStack[undoStack.length - 1]; action.restore(); setUndoStack((p) => p.slice(0, -1)); }} style={{ ...BTN("#fff", "#1a3a4a"), fontSize: "11px", padding: "4px 10px" }}>בטל</button>
+        </div>
+      )}
+
       {/* ══════════ CONTENT ══════════ */}
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+
+        {/* ═══ DASHBOARD TAB ═══ */}
+        {activeTab === "dash" && (
+          <div style={{ flex: 1, padding: "14px", overflowY: "auto" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "8px", marginBottom: "14px" }}>
+              <div style={{ ...CARD, textAlign: "center", padding: "12px" }}>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "#2d8a6e" }}>{dashData.overallProgress}%</div>
+                <div style={{ fontSize: "11px", color: "#888" }}>התקדמות כללית</div>
+                <div style={{ height: 4, background: "#eee", borderRadius: 2, marginTop: 6 }}><div style={{ height: 4, background: "#2d8a6e", borderRadius: 2, width: `${dashData.overallProgress}%` }} /></div>
+              </div>
+              <div style={{ ...CARD, textAlign: "center", padding: "12px" }}>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "#1a3a4a" }}>{dashData.donePhases}/{dashData.totalPhases}</div>
+                <div style={{ fontSize: "11px", color: "#888" }}>שלבים הושלמו</div>
+                <div style={{ display: "flex", gap: "3px", justifyContent: "center", marginTop: 6 }}>
+                  {dashData.activePhases > 0 && <span style={TAG("#f59e0b20", "#f59e0b")}>🔨 {dashData.activePhases}</span>}
+                  {dashData.delayedPhases > 0 && <span style={TAG("#ef444420", "#ef4444")}>⚠️ {dashData.delayedPhases}</span>}
+                </div>
+              </div>
+              <div style={{ ...CARD, textAlign: "center", padding: "12px" }}>
+                <div style={{ fontSize: "18px", fontWeight: 800, color: dashData.budgetDiff >= 0 ? "#22c55e" : "#ef4444" }}>₪{Math.abs(dashData.budgetDiff).toLocaleString()}</div>
+                <div style={{ fontSize: "11px", color: "#888" }}>{dashData.budgetDiff >= 0 ? "תחת התקציב" : "חריגה"}</div>
+                <div style={{ fontSize: "10px", color: "#aaa", marginTop: 4 }}>מתוך ₪{dashData.totalBudget.toLocaleString()}</div>
+              </div>
+              <div style={{ ...CARD, textAlign: "center", padding: "12px" }}>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "#8b5cf6" }}>{dashData.openPunch}</div>
+                <div style={{ fontSize: "11px", color: "#888" }}>ליקויים פתוחים</div>
+                <div style={{ fontSize: "10px", color: "#aaa", marginTop: 4 }}>{dashData.openDocs} מסמכים בטיפול</div>
+              </div>
+            </div>
+
+            {notifications.length > 0 && (
+              <div style={{ ...CARD, marginBottom: "14px", padding: "12px", border: "1px solid #fecaca" }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "8px" }}>🔔 התראות ({notifications.length})</div>
+                {notifications.map((n, i) => (
+                  <div key={i} style={{ display: "flex", gap: "8px", padding: "5px 0", borderBottom: i < notifications.length - 1 ? "1px solid #f5f5f5" : "none", fontSize: "12px", alignItems: "center" }}>
+                    <span>{n.icon}</span>
+                    <span style={{ flex: 1, color: n.type === "danger" ? "#ef4444" : n.type === "warn" ? "#f59e0b" : "#555" }}>{n.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ ...CARD, marginBottom: "14px", padding: "12px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "8px" }}>📊 שלבים פעילים</div>
+              {phases.filter((p) => p.status === "active" || p.status === "delayed").length === 0
+                ? <div style={{ fontSize: "12px", color: "#999" }}>אין שלבים פעילים כרגע</div>
+                : phases.filter((p) => p.status === "active" || p.status === "delayed").map((p) => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 0", borderBottom: "1px solid #f5f5f5" }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: stColors[p.status], flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#1a3a4a" }}>{p.name}</div>
+                    <div style={{ fontSize: "10.5px", color: "#888" }}>{p.contractor || "-"} | {formatDate(p.start)}-{formatDate(p.end)}</div>
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: "13px", color: p.progress >= 80 ? "#22c55e" : "#f59e0b" }}>{p.progress || 0}%</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button onClick={exportCSV} style={{ ...BTN("#2563eb"), fontSize: "12px" }}>📊 ייצוא CSV</button>
+              <button onClick={quickExport} style={{ ...BTN("#059669"), fontSize: "12px" }}>💾 גיבוי מהיר</button>
+              <button onClick={() => setActiveTab("budget")} style={{ ...BTN("#7c3aed"), fontSize: "12px" }}>💰 ניהול תקציב</button>
+            </div>
+          </div>
+        )}
 
         {/* ═══ CHAT TAB ═══ */}
         {activeTab === "chat" && (
@@ -1863,6 +2225,123 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ═══ BUDGET TAB ═══ */}
+        {activeTab === "budget" && (
+          <div style={{ flex: 1, padding: "14px", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <div style={{ fontSize: "15px", fontWeight: 700, color: "#1a3a4a" }}>💰 ניהול תקציב</div>
+              <button onClick={() => setEditBudget({ category: "", planned: 0, actual: 0, phase: "", notes: "" })} style={BTN()}>+ סעיף</button>
+            </div>
+
+            {budget.length > 0 && (
+              <div style={{ ...CARD, marginBottom: "12px", padding: "12px", background: "linear-gradient(135deg, #f0faf5, #fef9ef)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>
+                  <span>סה"כ מתוכנן: ₪{dashData.totalBudget.toLocaleString()}</span>
+                  <span style={{ color: dashData.budgetDiff >= 0 ? "#22c55e" : "#ef4444" }}>בפועל: ₪{dashData.totalActual.toLocaleString()}</span>
+                </div>
+                <div style={{ height: 8, background: "#e5e5e5", borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: 8, borderRadius: 4, width: `${dashData.totalBudget > 0 ? Math.min(100, dashData.totalActual / dashData.totalBudget * 100) : 0}%`, background: dashData.totalActual <= dashData.totalBudget ? "#22c55e" : "#ef4444" }} />
+                </div>
+                <div style={{ fontSize: "11px", color: "#888", marginTop: "4px", textAlign: "center" }}>{dashData.budgetDiff >= 0 ? `נותר ₪${dashData.budgetDiff.toLocaleString()}` : `חריגה של ₪${Math.abs(dashData.budgetDiff).toLocaleString()}`}</div>
+              </div>
+            )}
+
+            {budget.length === 0 ? (
+              <div style={{ ...CARD, textAlign: "center", padding: "28px", maxWidth: 420, margin: "20px auto" }}>
+                <div style={{ fontSize: "32px", marginBottom: "8px" }}>💰</div>
+                <div style={{ fontWeight: 700, color: "#1a3a4a" }}>ניהול תקציב</div>
+                <p style={{ fontSize: "13px", color: "#888", margin: "4px 0 12px" }}>הוסף סעיפי תקציב לפי שלבים</p>
+                <button onClick={() => {
+                  const defaultItems = phases.map((p) => ({ id: uid(), category: p.name, planned: 0, actual: 0, phase: p.name, notes: "" }));
+                  setBudget(defaultItems);
+                }} style={BTN()}>🚀 צור סעיפים מהגאנט</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {budget.map((b) => {
+                  const pct = b.planned > 0 ? Math.round(b.actual / b.planned * 100) : 0;
+                  const over = b.actual > b.planned && b.planned > 0;
+                  return (
+                    <div key={b.id} style={{ ...CARD, padding: "10px 12px" }} onClick={() => setEditBudget({ ...b })}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <div style={{ fontSize: "13px", fontWeight: 600, color: "#1a3a4a" }}>{b.category}</div>
+                          <div style={{ fontSize: "10.5px", color: "#888" }}>{b.phase || "-"}{b.notes ? ` | ${b.notes}` : ""}</div>
+                        </div>
+                        <div style={{ textAlign: "left" }}>
+                          <div style={{ fontSize: "13px", fontWeight: 700, color: over ? "#ef4444" : "#1a3a4a" }}>₪{(b.actual || 0).toLocaleString()}</div>
+                          <div style={{ fontSize: "10px", color: "#888" }}>מתוך ₪{(b.planned || 0).toLocaleString()}</div>
+                        </div>
+                      </div>
+                      <div style={{ height: 4, background: "#eee", borderRadius: 2, marginTop: 6 }}>
+                        <div style={{ height: 4, borderRadius: 2, width: `${Math.min(100, pct)}%`, background: over ? "#ef4444" : pct > 80 ? "#f59e0b" : "#22c55e" }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ DAILY LOG TAB ═══ */}
+        {activeTab === "log" && (
+          <div style={{ flex: 1, padding: "14px", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <div style={{ fontSize: "15px", fontWeight: 700, color: "#1a3a4a" }}>📝 יומן אתר</div>
+              <button onClick={() => setEditLog({ date: todayStr(), weather: "☀️", workers: 0, phase: "", notes: "", issues: "" })} style={BTN()}>+ רשומה</button>
+            </div>
+
+            {dailyLogs.length === 0 ? (
+              <div style={{ ...CARD, textAlign: "center", padding: "28px", maxWidth: 420, margin: "20px auto" }}>
+                <div style={{ fontSize: "32px", marginBottom: "8px" }}>📝</div>
+                <div style={{ fontWeight: 700, color: "#1a3a4a" }}>יומן אתר</div>
+                <p style={{ fontSize: "13px", color: "#888", margin: "4px 0 12px" }}>תעד עבודה יומית, מזג אוויר, עובדים, ליקויים</p>
+                <button onClick={() => setEditLog({ date: todayStr(), weather: "☀️", workers: 0, phase: "", notes: "", issues: "" })} style={BTN()}>📝 רשומה ראשונה</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {[...dailyLogs].reverse().map((log) => (
+                  <div key={log.id} style={CARD} onClick={() => setEditLog({ ...log })}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a" }}>{log.weather} {formatDate(log.date)}</div>
+                      <div style={{ display: "flex", gap: "6px", fontSize: "11px" }}>
+                        {log.workers > 0 && <span style={TAG("#3b82f620", "#3b82f6")}>👷 {log.workers}</span>}
+                        {log.phase && <span style={TAG("#8b5cf620", "#8b5cf6")}>{log.phase}</span>}
+                      </div>
+                    </div>
+                    {log.notes && <div style={{ fontSize: "12px", color: "#555", lineHeight: 1.5 }}>{log.notes}</div>}
+                    {log.issues && <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "4px" }}>⚠️ {log.issues}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Punch-list section */}
+            <div style={{ marginTop: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "#1a3a4a" }}>🔧 רשימת ליקויים</div>
+                <button onClick={() => setEditPunch({ title: "", phase: "", severity: "medium", notes: "", resolved: false, date: todayStr() })} style={{ ...BTN("#ef4444"), fontSize: "12px" }}>+ ליקוי</button>
+              </div>
+              {punchList.length === 0 ? (
+                <div style={{ fontSize: "12px", color: "#999", textAlign: "center", padding: "12px" }}>אין ליקויים - מצוין! 🎉</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {punchList.map((p) => (
+                    <div key={p.id} onClick={() => setEditPunch({ ...p })} style={{ ...CARD, padding: "10px", opacity: p.resolved ? 0.6 : 1, borderRight: `3px solid ${p.severity === "high" ? "#ef4444" : p.severity === "medium" ? "#f59e0b" : "#22c55e"}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ fontSize: "13px", fontWeight: 600, color: "#1a3a4a", textDecoration: p.resolved ? "line-through" : "none" }}>{p.title}</div>
+                        <span style={{ fontSize: "11px", color: p.resolved ? "#22c55e" : "#f59e0b", fontWeight: 600 }}>{p.resolved ? "✅ טופל" : "⏳ פתוח"}</span>
+                      </div>
+                      <div style={{ fontSize: "11px", color: "#888", marginTop: "2px" }}>{p.phase || "-"} | {formatDate(p.date)}{p.notes ? ` | ${p.notes}` : ""}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
