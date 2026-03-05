@@ -1,5 +1,5 @@
 const { useState, useRef, useEffect, useCallback } = React;
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.1.0";
 
 /* ═══════════════════════════════════════════
    FIX #1: Overlay defined OUTSIDE main component
@@ -64,28 +64,27 @@ function useStorage(key, initial) {
 /* ═══════════════════════════════════════════
    Constants
    ═══════════════════════════════════════════ */
-const SYSTEM_PROMPT_BASE = `אתה יועץ בנייה מקצועי ומנוסה מאוד עם ניסיון של מעל 20 שנה בתחום הבנייה הפרטית בישראל.
+const SYSTEM_PROMPT_BASE = `אתה יועץ בנייה מקצועי ומנוסה מאוד עם ניסיון של מעל 20 שנה בתחום הבנייה הפרטית בישראל. אתה בצד של בעל הבית - תמיד.
 
-🎯 גישה - "דרך המלך":
-- חפש פתרונות win-win. המטרה לבנות יחסים ארוכי טווח עם בעלי מקצוע.
-- כשמנתח הצעת מחיר - התחל מנקודות חיוביות, אח"כ נקודות לבירור.
-- נסח תגובות בצורה מכבדת: "שמתי לב ש..." לא "זה מנופח".
-- הצע אלטרנטיבות ופשרות: "מה דעתך ש..." לא "אני דורש".
-- קבלן טוב שווה זהב - שמירה על יחסים חשובה לא פחות ממחיר.
-- כשיש בעיה - הצע נתיב לפתרון, לא רק תיאור.
-- הוסף "שאלות לבירור" לפני מסקנות - יכול להיות הסבר טוב.
+🎯 טון ואופי:
+- דבר כמו מקצוען שמבין עניין. ביטחון, ידע, ישירות.
+- אל תרכך יותר מדי. אם מחיר מנופח - תגיד "המחיר גבוה מהמקובל". אם יש בעיה - תגיד שיש בעיה.
+- אתה לא סוכן של הקבלן. אתה של בעל הבית. שמור על האינטרסים שלו בלי התנצלויות.
+- תן דעה ברורה. "לדעתי לא כדאי", "אני ממליץ לעמוד על זה", "זה מחיר סביר" - לא "אולי שווה לשקול..."
+- כן תהיה מכבד, אבל כזה שמכבד ומדבר תכל'ס. לא רך - ענייני.
+- כשקבלן עושה עבודה טובה - תגיד. כשלא - תגיד גם.
 
 💡 פורמט ניתוח מסמכים:
-1. סיכום כללי - מי, מה, סכום
-2. נקודות חיוביות
-3. נקודות לבירור (לא "בעיות")
-4. השוואה לשוק
-5. המלצות לשיחה (ניסוח מכבד)
-6. שאלות מומלצות
+1. סיכום כללי - מי, מה, סכום, שורה תחתונה
+2. מה בסדר
+3. מה לא בסדר או חשוד (תגיד ישירות)
+4. השוואה לשוק - מספרים
+5. מה לדרוש בשיחה עם הקבלן
+6. שאלות שצריך לשאול
 7. צעדים הבאים
 
 ידע: בנייה, אינסטלציה, חשמל, גמרים, בידוד, איטום, תקנים, היתרים, חוזים, משכנתאות.
-כללים: 1) עברית 2) ישיר אך מכבד 3) אינטרס בעל הבית 4) מספרים 5) דיפלומטי 6) תמציתי - תשובות קצרות וממוקדות, ללא חזרות מיותרות
+כללים: 1) עברית 2) ישיר ובטוח 3) אינטרס בעל הבית 4) מספרים ועובדות 5) לא רך - מקצועי 6) תמציתי - תשובות קצרות וחדות, ללא חזרות מיותרות
 
 🔧 עריכת גאנט מהצ'אט:
 כשהמשתמש מבקש לשנות את לוח הזמנים, להזיז שלב, להוסיף שלב, למחוק שלב, או לעדכן סטטוס/קבלן - הוסף בסוף התשובה פקודות בפורמט הבא (שורה חדשה לכל פקודה):
@@ -125,11 +124,11 @@ const PHASES_TEMPLATE = [
 ];
 
 const WA_TEMPLATES = [
-  { id: "status", label: "סטטוס", icon: "📊", text: 'שלום {name}, מה שלומך? רציתי לבדוק מה הסטטוס ואם צפויים עיכובים. אשמח לעדכון.' },
-  { id: "schedule", label: "תיאום", icon: "📅", text: "שלום {name}, רציתי לתאם מועד להמשך. מתי נוח?" },
+  { id: "status", label: "סטטוס", icon: "📊", text: 'שלום {name}, מה שלומך? רציתי לבדוק מה הסטטוס של {phase} ({progress}% בוצע, תאריך יעד: {endDate}). האם צפויים עיכובים? אשמח לעדכון.' },
+  { id: "schedule", label: "תיאום", icon: "📅", text: "שלום {name}, רציתי לתאם מועד להמשך עבודות {phase}. לפי התוכנית ההתחלה ב-{startDate}. מתי נוח?" },
   { id: "issue", label: "בירור", icon: "💡", text: "שלום {name}, שמתי לב לנקודה שרציתי לברר: [תאר]. מה דעתך?" },
-  { id: "payment", label: "תשלום", icon: "💰", text: "שלום {name}, איך עומדים עם אבן הדרך? אשמח לתאם בדיקה ולהתקדם." },
-  { id: "reminder", label: "תזכורת", icon: "🔔", text: 'שלום {name}, תזכורת ידידותית - {phase} אמור להתקדם בקרוב. הכל בתוקף?' },
+  { id: "payment", label: "תשלום", icon: "💰", text: "שלום {name}, איך עומדים עם אבן הדרך? {phase} ב-{progress}% השלמה. אשמח לתאם בדיקה ולהתקדם." },
+  { id: "reminder", label: "תזכורת", icon: "🔔", text: 'שלום {name}, תזכורת ידידותית - {phase} אמור להתקדם בקרוב (מ-{startDate} עד {endDate}). הכל בתוקף?' },
   { id: "thanks", label: "תודה", icon: "🙏", text: "שלום {name}, רציתי להגיד תודה על העבודה המקצועית!" },
 ];
 
@@ -153,6 +152,7 @@ const GOOGLE_CLIENT_ID = "536306909343-ttqpfvm7bpqia6f94lnetk17e0sv9v7m.apps.goo
 
 const stColors = { pending: "#94a3b8", active: "#f59e0b", done: "#22c55e", delayed: "#ef4444" };
 const stLabels = { pending: "טרם התחיל", active: "בביצוע", done: "הושלם", delayed: "מעוכב" };
+const stCycle = ["pending", "active", "done", "delayed"];
 const docStColors = { "חדש": "#3b82f6", "בטיפול": "#f59e0b", "הושלם": "#22c55e", "לבירור": "#ef4444" };
 
 /* ═══ File helpers ═══ */
@@ -578,7 +578,9 @@ function App() {
   const [undoStack, setUndoStack] = useState([]);
   const ganttChatRef = useRef(null);
   const ganttInputRef = useRef(null);
+  const ganttScrollRef = useRef(null);
   const [settingsTab, setSettingsTab] = useState("anthropic");
+  const [fabOpen, setFabOpen] = useState(false);
 
   // Backup tracking
   const [lastBackup, setLastBackup] = useState(() => localStorage.getItem("myhouse-last-backup") || "");
@@ -600,6 +602,23 @@ function App() {
   const fileInputRef = useRef(null);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  // Auto-scroll Gantt to today's position when tab opens
+  useEffect(() => {
+    if (activeTab === "gantt" && ganttScrollRef.current && phases.length > 0) {
+      setTimeout(() => {
+        const el = ganttScrollRef.current;
+        if (!el) return;
+        const { minDate, totalDays } = getGanttRange();
+        const todayPct = clamp(daysBetween(minDate, todayStr()) / totalDays, 0, 1);
+        // In RTL, scrollLeft is negative in some browsers; scroll so today is ~30% from right
+        const scrollTarget = el.scrollWidth * (1 - todayPct) - el.clientWidth * 0.3;
+        el.scrollLeft = -Math.max(0, scrollTarget);
+        // Fallback for browsers with positive RTL scrollLeft
+        if (el.scrollLeft === 0 && scrollTarget > 0) el.scrollLeft = scrollTarget;
+      }, 100);
+    }
+  }, [activeTab, phases.length, getGanttRange]);
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -1119,6 +1138,25 @@ function App() {
     return { totalPhases, donePhases, activePhases, delayedPhases, overallProgress, totalBudget, totalActual, budgetDiff, openDocs, openPunch };
   })();
 
+  /* ═══ SMART SUGGESTIONS ═══ */
+  const smartSuggestions = (() => {
+    const s = [];
+    const today = todayStr();
+    // Phases pending but start date passed
+    phases.forEach((p) => { if (p.status === "pending" && p.start <= today) s.push({ icon: "🚀", text: `"${p.name}" אמור היה להתחיל (${formatDate(p.start)}) — עדכן סטטוס לבביצוע`, action: () => { setPhases((prev) => prev.map((x) => x.id === p.id ? { ...x, status: "active" } : x)); }, btn: "התחל" }); });
+    // Active phase at 100% but not done
+    phases.forEach((p) => { if (p.status === "active" && p.progress >= 100) s.push({ icon: "✅", text: `"${p.name}" ב-100% — סמן כהושלם?`, action: () => { setPhases((prev) => prev.map((x) => x.id === p.id ? { ...x, status: "done" } : x)); }, btn: "הושלם" }); });
+    // No contractor assigned to upcoming phase
+    phases.forEach((p) => { if (p.status === "pending" && !p.contractor && p.start <= addDays(today, 14)) s.push({ icon: "👷", text: `"${p.name}" מתחיל ב-${formatDate(p.start)} ללא קבלן — שייך קבלן`, action: () => { setActiveTab("gantt"); setEditPhase({ ...p }); }, btn: "עריכה" }); });
+    // No budget items
+    if (phases.length > 0 && budget.length === 0) s.push({ icon: "💰", text: "טרם הוגדר תקציב — הגדר סעיפי תקציב", action: () => setActiveTab("budget"), btn: "תקציב" });
+    // Budget overrun
+    budget.forEach((b) => { if (b.actual > b.planned && b.planned > 0) s.push({ icon: "📊", text: `חריגת תקציב ב"${b.category}": ₪${(b.actual - b.planned).toLocaleString()} מעל התקציב`, action: () => setActiveTab("budget"), btn: "צפה" }); });
+    // No daily log today
+    if (phases.some((p) => p.status === "active") && !dailyLogs.some((l) => l.date === today)) s.push({ icon: "📝", text: "טרם נרשם יומן לעבודה היום", action: () => { setActiveTab("log"); setEditLog({ date: today, weather: "☀️", workers: 0, phase: "", notes: "", issues: "" }); }, btn: "רשום" });
+    return s.slice(0, 5);
+  })();
+
   /* ═══ EXPORT ═══ */
   const exportCSV = useCallback(() => {
     let csv = "\uFEFF"; // BOM for Hebrew
@@ -1354,10 +1392,13 @@ function App() {
           </div>
           <div style={{ padding: "12px 20px" }}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginBottom: "10px" }}>
-              {WA_TEMPLATES.map((t) => (
-                <button key={t.id} onClick={() => setWaText(t.text.replace("{name}", waCompose.name).replace("{phase}", phases.find((p) => p.contractor === waCompose.name)?.name || "השלב"))}
+              {WA_TEMPLATES.map((t) => {
+                const cp = phases.find((p) => p.contractor === waCompose.name) || {};
+                return (
+                <button key={t.id} onClick={() => setWaText(t.text.replace("{name}", waCompose.name).replace("{phase}", cp.name || "השלב").replace("{progress}", cp.progress || 0).replace("{startDate}", formatDate(cp.start)).replace("{endDate}", formatDate(cp.end)))}
                   style={{ ...BTN("#f5f0eb", "#2c2c2c"), fontSize: "11.5px", padding: "5px 9px", fontWeight: 500 }}>{t.icon} {t.label}</button>
-              ))}
+                );
+              })}
             </div>
             <textarea value={waText} onChange={(e) => setWaText(e.target.value)} rows={4} style={{ ...INP, resize: "vertical", lineHeight: 1.5 }} />
             <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
@@ -1778,6 +1819,19 @@ function App() {
               </div>
             )}
 
+            {smartSuggestions.length > 0 && (
+              <div style={{ ...CARD, marginBottom: "14px", padding: "12px", border: "1px solid #bbf7d0", background: "#f0fdf4" }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#166534", marginBottom: "8px" }}>💡 המלצות חכמות</div>
+                {smartSuggestions.map((s, i) => (
+                  <div key={i} style={{ display: "flex", gap: "8px", padding: "6px 0", borderBottom: i < smartSuggestions.length - 1 ? "1px solid #dcfce7" : "none", fontSize: "12px", alignItems: "center" }}>
+                    <span>{s.icon}</span>
+                    <span style={{ flex: 1, color: "#333" }}>{s.text}</span>
+                    {s.action && <button onClick={s.action} style={{ ...BTN("#2d8a6e"), fontSize: "10px", padding: "3px 8px", whiteSpace: "nowrap" }}>{s.btn}</button>}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={{ ...CARD, marginBottom: "14px", padding: "12px" }}>
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "8px" }}>📊 שלבים פעילים</div>
               {phases.filter((p) => p.status === "active" || p.status === "delayed").length === 0
@@ -2044,7 +2098,7 @@ function App() {
                     </div>
                   )}
 
-                  <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                  <div ref={ganttScrollRef} style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
                     <div style={{ minWidth: Math.max(600, totalDays * 2.5) }}>
                       {/* Month headers - same flex layout as phase rows for alignment */}
                       <div style={{ display: "flex", alignItems: "center", marginBottom: "4px", borderBottom: "1px solid #e5e5e5" }}>
@@ -2110,16 +2164,41 @@ function App() {
                               <div style={{ position: "absolute", right: `${todayOff}%`, top: 0, bottom: 0, width: "1.5px", background: "#ef4444", zIndex: 2, opacity: 0.3 }} />
                               <div style={{ position: "absolute", right: `${sOff}%`, width: `${w}%`, top: "2px", bottom: "2px", borderRadius: "5px", background: phase.color + "20", border: `1.5px solid ${phase.color}35` }}>
                                 <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: `${phase.progress || 0}%`, background: phase.color, borderRadius: "4px", opacity: 0.5 }} />
-                                <div style={{ position: "absolute", left: "5px", top: "50%", transform: "translateY(-50%)", width: "6px", height: "6px", borderRadius: "50%", background: stColors[phase.status] }} />
+                                <div onClick={(e) => { e.stopPropagation(); const nextSt = stCycle[(stCycle.indexOf(phase.status) + 1) % stCycle.length]; setPhases((prev) => prev.map((p) => p.id === phase.id ? { ...p, status: nextSt, progress: nextSt === "done" ? 100 : p.progress } : p)); }} title={`${stLabels[phase.status]} — לחץ לשנות`} style={{ position: "absolute", left: "3px", top: "50%", transform: "translateY(-50%)", width: "12px", height: "12px", borderRadius: "50%", background: stColors[phase.status], border: "2px solid #fff", cursor: "pointer", zIndex: 4, boxShadow: "0 0 3px rgba(0,0,0,0.2)" }} />
                                 <div style={{ position: "absolute", right: "5px", top: "50%", transform: "translateY(-50%)", fontSize: "9px", color: phase.color, fontWeight: 600, whiteSpace: "nowrap" }}>{formatDate(phase.start)}-{formatDate(phase.end)}</div>
                               </div>
                             </div>
                           </div>
                         );
                       })}
-                      <div style={{ display: "flex", gap: "10px", marginTop: "8px", fontSize: "10px", color: "#888" }}>
+                      {/* Milestone markers row */}
+                      {(() => {
+                        const milestones = [];
+                        phases.forEach((p) => {
+                          if (p.start === p.end) milestones.push({ date: p.start, label: p.name, color: p.color });
+                        });
+                        // Add project start & end milestones
+                        if (phases.length > 0) {
+                          const projEnd = phases.reduce((mx, p) => p.end > mx ? p.end : mx, phases[0].end);
+                          milestones.push({ date: projectStart, label: "תחילת פרויקט", color: "#2d8a6e" });
+                          milestones.push({ date: projEnd, label: "סיום צפוי", color: "#7c3aed" });
+                        }
+                        return milestones.length > 0 ? (
+                          <div style={{ display: "flex", alignItems: "center", marginTop: "4px" }}>
+                            <div style={{ width: "120px", flexShrink: 0, position: "sticky", right: 0, zIndex: 3, background: "#f5f0eb", fontSize: "9px", color: "#888", fontWeight: 600 }}>אבני דרך</div>
+                            <div style={{ flex: 1, position: "relative", height: "20px" }}>
+                              {milestones.map((m, i) => {
+                                const off = clamp(daysBetween(minDate, m.date) / totalDays * 100, 0, 100);
+                                return <div key={i} title={`${m.label} (${formatDate(m.date)})`} style={{ position: "absolute", right: `${off}%`, top: "50%", transform: "translate(50%, -50%) rotate(45deg)", width: "8px", height: "8px", background: m.color, border: "1.5px solid #fff", zIndex: 2, boxShadow: "0 0 3px rgba(0,0,0,0.15)", cursor: "default" }} />;
+                              })}
+                            </div>
+                          </div>
+                        ) : null;
+                      })()}
+                      <div style={{ display: "flex", gap: "10px", marginTop: "8px", fontSize: "10px", color: "#888", flexWrap: "wrap" }}>
                         <span style={{ display: "flex", alignItems: "center", gap: "3px" }}><div style={{ width: 8, height: 1.5, background: "#ef4444" }} />היום ({formatDate(todayStr())})</span>
                         {Object.entries(stLabels).map(([k, v]) => <span key={k} style={{ display: "flex", alignItems: "center", gap: "3px" }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: stColors[k] }} />{v}</span>)}
+                        <span style={{ display: "flex", alignItems: "center", gap: "3px" }}><div style={{ width: 7, height: 7, background: "#7c3aed", transform: "rotate(45deg)" }} />אבן דרך</span>
                       </div>
                     </div>
                   </div>
@@ -2202,11 +2281,12 @@ function App() {
                       {ap.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "6px" }}>{ap.map((p) => <span key={p.id} style={TAG(stColors[p.status] + "20", stColors[p.status])}>{p.name} ({p.progress || 0}%)</span>)}</div>}
                       {c.phone && (
                         <div style={{ display: "flex", gap: "5px", marginTop: "8px", flexWrap: "wrap" }}>
-                          <button onClick={() => { setWaCompose(c); setWaText(WA_TEMPLATES[0].text.replace("{name}", c.name)); }} style={{ ...BTN("#25d366", "#fff"), fontSize: "12px", padding: "5px 10px" }}>📱 וואטסאפ</button>
-                          {["סטטוס", "תיאום", "תזכורת", "תודה"].map((label, idx) => (
-                            <button key={label} onClick={() => { setWaCompose(c); setWaText(WA_TEMPLATES[[0, 1, 4, 5][idx]].text.replace("{name}", c.name).replace("{phase}", ap[0]?.name || "השלב")); }}
-                              style={{ ...BTN("#f5f0eb", "#2c2c2c"), fontSize: "11px", padding: "5px 8px" }}>{[WA_TEMPLATES[0], WA_TEMPLATES[1], WA_TEMPLATES[4], WA_TEMPLATES[5]][[0, 1, 2, 3][idx]].icon} {label}</button>
-                          ))}
+                          <button onClick={() => { const cp = ap[0] || {}; setWaCompose(c); setWaText(WA_TEMPLATES[0].text.replace("{name}", c.name).replace("{phase}", cp.name || "השלב").replace("{progress}", cp.progress || 0).replace("{startDate}", formatDate(cp.start)).replace("{endDate}", formatDate(cp.end))); }} style={{ ...BTN("#25d366", "#fff"), fontSize: "12px", padding: "5px 10px" }}>📱 וואטסאפ</button>
+                          {["סטטוס", "תיאום", "תזכורת", "תודה"].map((label, idx) => {
+                            const tIdx = [0, 1, 4, 5][idx]; const cp = ap[0] || {};
+                            return <button key={label} onClick={() => { setWaCompose(c); setWaText(WA_TEMPLATES[tIdx].text.replace("{name}", c.name).replace("{phase}", cp.name || "השלב").replace("{progress}", cp.progress || 0).replace("{startDate}", formatDate(cp.start)).replace("{endDate}", formatDate(cp.end))); }}
+                              style={{ ...BTN("#f5f0eb", "#2c2c2c"), fontSize: "11px", padding: "5px 8px" }}>{WA_TEMPLATES[tIdx].icon} {label}</button>;
+                          })}
                         </div>
                       )}
                     </div>
@@ -2218,10 +2298,11 @@ function App() {
               <div style={{ ...CARD, marginTop: "12px", padding: "12px" }}>
                 <div style={{ fontWeight: 700, fontSize: "12.5px", color: "#1a3a4a", marginBottom: "6px" }}>📢 בדיקת סטטוס מרוכזת</div>
                 <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-                  {contractors.filter((c) => c.phone).map((c) => (
-                    <button key={c.id} onClick={() => openWhatsApp(c.phone, WA_TEMPLATES[0].text.replace("{name}", c.name))}
-                      style={{ ...BTN("#25d36620", "#25d366"), fontSize: "11px", padding: "4px 8px", border: "1px solid #25d36640" }}>📱 {c.name}</button>
-                  ))}
+                  {contractors.filter((c) => c.phone).map((c) => {
+                    const cp = phases.find((p) => p.contractor === c.name) || {};
+                    return <button key={c.id} onClick={() => openWhatsApp(c.phone, WA_TEMPLATES[0].text.replace("{name}", c.name).replace("{phase}", cp.name || "השלב").replace("{progress}", cp.progress || 0).replace("{startDate}", formatDate(cp.start)).replace("{endDate}", formatDate(cp.end)))}
+                      style={{ ...BTN("#25d36620", "#25d366"), fontSize: "11px", padding: "4px 8px", border: "1px solid #25d36640" }}>📱 {c.name}</button>;
+                  })}
                 </div>
               </div>
             )}
@@ -2346,8 +2427,39 @@ function App() {
         )}
       </div>
 
+      {/* ═══ FLOATING ACTION BUTTON ═══ */}
+      {activeTab !== "chat" && (
+        <div style={{ position: "fixed", bottom: "80px", left: "16px", zIndex: 900, direction: "ltr" }}>
+          {fabOpen && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
+              {[
+                { icon: "💬", label: "צ'אט", action: () => { setActiveTab("chat"); setFabOpen(false); } },
+                { icon: "📊", label: "גאנט", action: () => { setActiveTab("gantt"); setFabOpen(false); } },
+                { icon: "📝", label: "יומן", action: () => { setActiveTab("log"); setEditLog({ date: todayStr(), weather: "☀️", workers: 0, phase: "", notes: "", issues: "" }); setFabOpen(false); } },
+                { icon: "🔧", label: "ליקוי", action: () => { setActiveTab("log"); setEditPunch({ title: "", phase: "", severity: "medium", notes: "", resolved: false, date: todayStr() }); setFabOpen(false); } },
+                { icon: "💾", label: "גיבוי", action: () => { quickExport(); setFabOpen(false); } },
+              ].map((item, i) => (
+                <button key={i} onClick={item.action} style={{
+                  display: "flex", alignItems: "center", gap: "6px", background: "#fff", border: "1px solid #e5e5e5",
+                  borderRadius: "20px", padding: "7px 14px 7px 10px", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                  fontSize: "12.5px", fontFamily: "inherit", fontWeight: 600, color: "#1a3a4a", whiteSpace: "nowrap",
+                  animation: `fabSlide 0.2s ease ${i * 0.04}s both`,
+                }}><span style={{ fontSize: "15px" }}>{item.icon}</span> {item.label}</button>
+              ))}
+            </div>
+          )}
+          <button onClick={() => setFabOpen((v) => !v)} style={{
+            width: 48, height: 48, borderRadius: "50%", border: "none", cursor: "pointer",
+            background: fabOpen ? "#ef4444" : "#2d8a6e", color: "#fff", fontSize: "22px",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "transform 0.2s, background 0.2s", transform: fabOpen ? "rotate(45deg)" : "none",
+          }}>+</button>
+        </div>
+      )}
+
       <style>{`
         @keyframes pulse { 0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.1); } }
+        @keyframes fabSlide { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         * { box-sizing: border-box; margin: 0; }
         textarea::placeholder, input::placeholder { color: #aaa; }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
