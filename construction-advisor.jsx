@@ -603,13 +603,20 @@ function App() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  // Auto-scroll Gantt to today's position when tab opens
+  // Auto-scroll Gantt to today's position when tab opens (uses getGanttRange defined below)
   useEffect(() => {
     if (activeTab === "gantt" && ganttScrollRef.current && phases.length > 0) {
       setTimeout(() => {
         const el = ganttScrollRef.current;
         if (!el) return;
-        const { minDate, totalDays } = getGanttRange();
+        // Compute range inline to avoid dependency on getGanttRange before its definition
+        const today = new Date(todayStr());
+        const dates = phases.flatMap((p) => [new Date(p.start), new Date(p.end)]);
+        dates.push(today);
+        const min = new Date(Math.min(...dates)); const max = new Date(Math.max(...dates));
+        min.setDate(min.getDate() - 7); max.setDate(max.getDate() + 14);
+        const minDate = min.toISOString().split("T")[0];
+        const totalDays = daysBetween(minDate, max.toISOString().split("T")[0]);
         const todayPct = clamp(daysBetween(minDate, todayStr()) / totalDays, 0, 1);
         // In RTL, scrollLeft is negative in some browsers; scroll so today is ~30% from right
         const scrollTarget = el.scrollWidth * (1 - todayPct) - el.clientWidth * 0.3;
@@ -618,7 +625,7 @@ function App() {
         if (el.scrollLeft === 0 && scrollTarget > 0) el.scrollLeft = scrollTarget;
       }, 100);
     }
-  }, [activeTab, phases.length, getGanttRange]);
+  }, [activeTab, phases]);
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -916,7 +923,7 @@ function App() {
         ));
       }
     } catch (e) {
-      const errMsg = e.message?.includes("30 שניות")
+      const errMsg = e.message?.includes("שניות ללא תגובה")
         ? e.message
         : e.message?.includes("Failed to fetch") || e.message?.includes("NetworkError")
           ? "❌ שגיאת רשת — בדוק את החיבור לאינטרנט ונסה שוב."
@@ -1143,7 +1150,7 @@ function App() {
     const s = [];
     const today = todayStr();
     // Phases pending but start date passed
-    phases.forEach((p) => { if (p.status === "pending" && p.start <= today) s.push({ icon: "🚀", text: `"${p.name}" אמור היה להתחיל (${formatDate(p.start)}) — עדכן סטטוס לבביצוע`, action: () => { setPhases((prev) => prev.map((x) => x.id === p.id ? { ...x, status: "active" } : x)); }, btn: "התחל" }); });
+    phases.forEach((p) => { if (p.status === "pending" && p.start <= today) s.push({ icon: "🚀", text: `"${p.name}" אמור היה להתחיל (${formatDate(p.start)}) — עדכן סטטוס לביצוע`, action: () => { setPhases((prev) => prev.map((x) => x.id === p.id ? { ...x, status: "active" } : x)); }, btn: "התחל" }); });
     // Active phase at 100% but not done
     phases.forEach((p) => { if (p.status === "active" && p.progress >= 100) s.push({ icon: "✅", text: `"${p.name}" ב-100% — סמן כהושלם?`, action: () => { setPhases((prev) => prev.map((x) => x.id === p.id ? { ...x, status: "done" } : x)); }, btn: "הושלם" }); });
     // No contractor assigned to upcoming phase
