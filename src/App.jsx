@@ -24,6 +24,13 @@ import { useStorage } from './core/useStorage.js';
 
 // Features
 import { BackupPanel } from './features/backup/BackupPanel.jsx';
+import { SettingsPanel } from './features/settings/SettingsPanel.jsx';
+import { DashboardTab } from './features/dashboard/DashboardTab.jsx';
+import { ChatTab } from './features/chat/ChatTab.jsx';
+import { DocsTab } from './features/documents/DocsTab.jsx';
+import { ContractorsTab } from './features/contractors/ContractorsTab.jsx';
+import { BudgetTab } from './features/budget/BudgetTab.jsx';
+import { DailyLogTab } from './features/daily-log/DailyLogTab.jsx';
 
 function App() {
   const [activeTab, setActiveTab] = useState("chat");
@@ -482,84 +489,11 @@ function App() {
       {/* ══════════ OVERLAYS ══════════ */}
 
       {showSettings && (
-        <Overlay onClose={() => setShowSettings(false)}>
-          <div style={{ padding: "16px 20px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>⚙️ הגדרות AI</span>
-            <button onClick={() => setShowSettings(false)} style={BTN("#f0f0f0", "#555")}>✕</button>
-          </div>
-          {/* Provider tabs */}
-          <div style={{ display: "flex", borderBottom: "2px solid #eee", padding: "0 20px" }}>
-            {[
-              { id: "anthropic", label: "Anthropic" },
-              { id: "openai", label: "ChatGPT" },
-              { id: "gemini", label: "Gemini" },
-            ].map((p) => (
-              <button key={p.id} onClick={() => setSettingsTab(p.id)}
-                style={{
-                  flex: 1, padding: "10px 4px", border: "none", cursor: "pointer", fontFamily: "inherit",
-                  fontSize: "13px", fontWeight: settingsTab === p.id ? 700 : 400,
-                  color: settingsTab === p.id ? "#1a3a4a" : "#888",
-                  background: "transparent",
-                  borderBottom: settingsTab === p.id ? "2px solid #2d8a6e" : "2px solid transparent",
-                  marginBottom: "-2px",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-                }}>
-                {p.label}
-                {provider === p.id && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#2d8a6e", display: "inline-block", flexShrink: 0 }} />}
-              </button>
-            ))}
-          </div>
-          <div style={{ padding: "16px 20px" }}>
-            {settingsTab === "anthropic" && (
-              <>
-                <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "8px" }}>
-                  🔑 API Key — <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" style={{ color: "#2d8a6e" }}>console.anthropic.com ↗</a>
-                </div>
-                <input type="password" value={anthropicKey}
-                  onChange={e => { setAnthropicKey(e.target.value); localStorage.setItem("anthropic-api-key", e.target.value); }}
-                  placeholder="sk-ant-..." style={{ ...INP, direction: "ltr", fontFamily: "monospace" }} />
-                {anthropicKey
-                  ? <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px", fontWeight: 600 }}>✅ מפתח מוגדר</div>
-                  : <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "6px", fontWeight: 600 }}>❌ נדרש מפתח</div>}
-                {provider === "anthropic"
-                  ? <div style={{ fontSize: "12px", color: "#2d8a6e", marginTop: "8px", fontWeight: 600 }}>✓ ספק פעיל</div>
-                  : <button onClick={() => { setProvider("anthropic"); localStorage.setItem("ai-provider", "anthropic"); }} style={{ ...BTN(), marginTop: "8px", fontSize: "12px", padding: "6px 14px" }}>בחר ספק זה</button>}
-              </>
-            )}
-            {settingsTab === "openai" && (
-              <>
-                <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "8px" }}>
-                  🔑 API Key — <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" style={{ color: "#2d8a6e" }}>platform.openai.com ↗</a>
-                </div>
-                <input type="password" value={openaiKey}
-                  onChange={e => { setOpenaiKey(e.target.value); localStorage.setItem("openai-api-key", e.target.value); }}
-                  placeholder="sk-..." style={{ ...INP, direction: "ltr", fontFamily: "monospace" }} />
-                {openaiKey
-                  ? <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px", fontWeight: 600 }}>✅ מפתח מוגדר</div>
-                  : <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "6px", fontWeight: 600 }}>❌ נדרש מפתח</div>}
-                {provider === "openai"
-                  ? <div style={{ fontSize: "12px", color: "#2d8a6e", marginTop: "8px", fontWeight: 600 }}>✓ ספק פעיל</div>
-                  : <button onClick={() => { setProvider("openai"); localStorage.setItem("ai-provider", "openai"); }} style={{ ...BTN(), marginTop: "8px", fontSize: "12px", padding: "6px 14px" }}>בחר ספק זה</button>}
-              </>
-            )}
-            {settingsTab === "gemini" && (
-              <>
-                <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "8px" }}>
-                  🔑 API Key — <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "#2d8a6e" }}>aistudio.google.com ↗</a>
-                </div>
-                <input type="password" value={geminiKey}
-                  onChange={e => { setGeminiKey(e.target.value); localStorage.setItem("gemini-api-key", e.target.value); }}
-                  placeholder="AIza..." style={{ ...INP, direction: "ltr", fontFamily: "monospace" }} />
-                {geminiKey
-                  ? <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px", fontWeight: 600 }}>✅ מפתח מוגדר</div>
-                  : <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "6px", fontWeight: 600 }}>❌ נדרש מפתח</div>}
-                {provider === "gemini"
-                  ? <div style={{ fontSize: "12px", color: "#2d8a6e", marginTop: "8px", fontWeight: 600 }}>✓ ספק פעיל</div>
-                  : <button onClick={() => { setProvider("gemini"); localStorage.setItem("ai-provider", "gemini"); }} style={{ ...BTN(), marginTop: "8px", fontSize: "12px", padding: "6px 14px" }}>בחר ספק זה</button>}
-              </>
-            )}
-          </div>
-        </Overlay>
+        <SettingsPanel onClose={() => setShowSettings(false)}
+          provider={provider} setProvider={setProvider}
+          anthropicKey={anthropicKey} setAnthropicKey={setAnthropicKey}
+          openaiKey={openaiKey} setOpenaiKey={setOpenaiKey}
+          geminiKey={geminiKey} setGeminiKey={setGeminiKey} />
       )}
 
       {showBackup && (
@@ -1072,259 +1006,25 @@ function App() {
 
         {/* ═══ DASHBOARD TAB ═══ */}
         {activeTab === "dash" && (
-          <div style={{ flex: 1, padding: "14px", overflowY: "auto" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "8px", marginBottom: "14px" }}>
-              <div style={{ ...CARD, textAlign: "center", padding: "12px" }}>
-                <div style={{ fontSize: "22px", fontWeight: 800, color: "#2d8a6e" }}>{dashData.overallProgress}%</div>
-                <div style={{ fontSize: "11px", color: "#888" }}>התקדמות כללית</div>
-                <div style={{ height: 4, background: "#eee", borderRadius: 2, marginTop: 6 }}><div style={{ height: 4, background: "#2d8a6e", borderRadius: 2, width: `${dashData.overallProgress}%` }} /></div>
-              </div>
-              <div style={{ ...CARD, textAlign: "center", padding: "12px" }}>
-                <div style={{ fontSize: "22px", fontWeight: 800, color: "#1a3a4a" }}>{dashData.donePhases}/{dashData.totalPhases}</div>
-                <div style={{ fontSize: "11px", color: "#888" }}>שלבים הושלמו</div>
-                <div style={{ display: "flex", gap: "3px", justifyContent: "center", marginTop: 6 }}>
-                  {dashData.activePhases > 0 && <span style={TAG("#f59e0b20", "#f59e0b")}>🔨 {dashData.activePhases}</span>}
-                  {dashData.delayedPhases > 0 && <span style={TAG("#ef444420", "#ef4444")}>⚠️ {dashData.delayedPhases}</span>}
-                </div>
-              </div>
-              <div style={{ ...CARD, textAlign: "center", padding: "12px" }}>
-                <div style={{ fontSize: "18px", fontWeight: 800, color: dashData.budgetDiff >= 0 ? "#22c55e" : "#ef4444" }}>₪{Math.abs(dashData.budgetDiff).toLocaleString()}</div>
-                <div style={{ fontSize: "11px", color: "#888" }}>{dashData.budgetDiff >= 0 ? "תחת התקציב" : "חריגה"}</div>
-                <div style={{ fontSize: "10px", color: "#aaa", marginTop: 4 }}>מתוך ₪{dashData.totalBudget.toLocaleString()}</div>
-              </div>
-              <div style={{ ...CARD, textAlign: "center", padding: "12px" }}>
-                <div style={{ fontSize: "22px", fontWeight: 800, color: "#8b5cf6" }}>{dashData.openPunch}</div>
-                <div style={{ fontSize: "11px", color: "#888" }}>ליקויים פתוחים</div>
-                <div style={{ fontSize: "10px", color: "#aaa", marginTop: 4 }}>{dashData.openDocs} מסמכים בטיפול</div>
-              </div>
-            </div>
-
-            {notifications.length > 0 && (
-              <div style={{ ...CARD, marginBottom: "14px", padding: "12px", border: "1px solid #fecaca" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "8px" }}>🔔 התראות ({notifications.length})</div>
-                {notifications.map((n, i) => (
-                  <div key={i} style={{ display: "flex", gap: "8px", padding: "5px 0", borderBottom: i < notifications.length - 1 ? "1px solid #f5f5f5" : "none", fontSize: "12px", alignItems: "center" }}>
-                    <span>{n.icon}</span>
-                    <span style={{ flex: 1, color: n.type === "danger" ? "#ef4444" : n.type === "warn" ? "#f59e0b" : "#555" }}>{n.text}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {smartSuggestions.length > 0 && (
-              <div style={{ ...CARD, marginBottom: "14px", padding: "12px", border: "1px solid #bbf7d0", background: "#f0fdf4" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "#166534", marginBottom: "8px" }}>💡 המלצות חכמות</div>
-                {smartSuggestions.map((s, i) => (
-                  <div key={i} style={{ display: "flex", gap: "8px", padding: "6px 0", borderBottom: i < smartSuggestions.length - 1 ? "1px solid #dcfce7" : "none", fontSize: "12px", alignItems: "center" }}>
-                    <span>{s.icon}</span>
-                    <span style={{ flex: 1, color: "#333" }}>{s.text}</span>
-                    {s.action && <button onClick={s.action} style={{ ...BTN("#2d8a6e"), fontSize: "10px", padding: "3px 8px", whiteSpace: "nowrap" }}>{s.btn}</button>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ ...CARD, marginBottom: "14px", padding: "12px" }}>
-              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "8px" }}>📊 שלבים פעילים</div>
-              {phases.filter((p) => p.status === "active" || p.status === "delayed").length === 0
-                ? <div style={{ fontSize: "12px", color: "#999" }}>אין שלבים פעילים כרגע</div>
-                : phases.filter((p) => p.status === "active" || p.status === "delayed").map((p) => (
-                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 0", borderBottom: "1px solid #f5f5f5" }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: stColors[p.status], flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#1a3a4a" }}>{p.name}</div>
-                    <div style={{ fontSize: "10.5px", color: "#888" }}>{p.contractor || "-"} | {formatDate(p.start)}-{formatDate(p.end)}</div>
-                  </div>
-                  <div style={{ fontWeight: 700, fontSize: "13px", color: p.progress >= 80 ? "#22c55e" : "#f59e0b" }}>{p.progress || 0}%</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <button onClick={exportCSV} style={{ ...BTN("#2563eb"), fontSize: "12px" }}>📊 ייצוא CSV</button>
-              <button onClick={quickExport} style={{ ...BTN("#059669"), fontSize: "12px" }}>💾 גיבוי מהיר</button>
-              <button onClick={() => setActiveTab("budget")} style={{ ...BTN("#7c3aed"), fontSize: "12px" }}>💰 ניהול תקציב</button>
-            </div>
-          </div>
+          <DashboardTab dashData={dashData} notifications={notifications} smartSuggestions={smartSuggestions}
+            phases={phases} exportCSV={exportCSV} quickExport={quickExport} setActiveTab={setActiveTab} />
         )}
 
         {/* ═══ CHAT TAB ═══ */}
         {activeTab === "chat" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative" }}
-            onDrop={handleDrop} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}>
-
-            {dragOver && (
-              <div style={{ position: "absolute", inset: 8, background: "rgba(45,138,110,0.12)", border: "3px dashed #2d8a6e", borderRadius: "12px", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                <div style={{ background: "#fff", borderRadius: "16px", padding: "20px 36px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", textAlign: "center" }}>
-                  <div style={{ fontSize: "32px", marginBottom: "6px" }}>📎</div>
-                  <div style={{ fontSize: "15px", fontWeight: 700, color: "#1a3a4a" }}>שחרר כאן</div>
-                  <div style={{ fontSize: "12px", color: "#666" }}>תמונות • PDF • טקסט</div>
-                </div>
-              </div>
-            )}
-
-            {!activeKey && (
-              <div style={{ background: "#fef3c7", borderBottom: "1px solid #f59e0b", padding: "10px 16px", fontSize: "13px", color: "#92400e", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span>⚠️ לא הוגדר API Key — היועץ לא יעבוד</span>
-                <button onClick={() => { setSettingsTab(provider); setShowSettings(true); }} style={{ background: "none", border: "none", color: "#2d8a6e", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", fontSize: "13px" }}>הגדר עכשיו ←</button>
-              </div>
-            )}
-
-            <div style={{ flex: 1, overflowY: "auto", padding: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-              {showIntro ? (
-                <div style={{ maxWidth: 700, margin: "0 auto", width: "100%" }}>
-                  <div style={{ ...CARD, textAlign: "center", marginBottom: "14px", padding: "22px" }}>
-                    <div style={{ fontSize: "34px", marginBottom: "8px" }}>🏗️</div>
-                    <h2 style={{ margin: "0 0 6px", fontSize: "19px", fontWeight: 800, color: "#1a3a4a" }}>ברוך הבא לפרויקט הבנייה</h2>
-                    <p style={{ margin: "0 0 12px", color: "#666", fontSize: "13.5px" }}>שאל, צרף הצעות מחיר, בקש מחקר - בגישה דיפלומטית ומקצועית</p>
-                    <div style={{ background: "#f0faf5", border: "2px dashed #2d8a6e40", borderRadius: "12px", padding: "14px", maxWidth: "380px", margin: "0 auto" }}>
-                      <div style={{ fontSize: "22px", marginBottom: "4px" }}>📎</div>
-                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#2d6b5a" }}>גרור קובץ או לחץ 📎</div>
-                      <div style={{ fontSize: "11px", color: "#888" }}>תמונות • PDF • הצעות מחיר</div>
-                    </div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "7px", marginBottom: "14px" }}>
-                    {CATEGORIES.map((c) => (
-                      <button key={c.id} onClick={() => { setShowIntro(false); setInput(c.label + ": "); setTimeout(() => textareaRef.current?.focus(), 50); }}
-                        style={{ ...CARD, cursor: "pointer", textAlign: "center", padding: "12px 8px", fontFamily: "inherit", border: "1px solid rgba(0,0,0,0.06)" }}>
-                        <div style={{ fontSize: "18px" }}>{c.icon}</div>
-                        <div style={{ fontSize: "11.5px", fontWeight: 600, marginTop: "4px" }}>{c.label}</div>
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {["מה חייב להיות בחוזה?", "מחיר למ״ר?", "איך בוחרים אדריכל?"].map((q, i) => (
-                      <button key={i} onClick={() => sendMessage(q)} style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.08)", borderRadius: "10px", padding: "8px 12px", cursor: "pointer", fontSize: "12px", fontFamily: "inherit", fontWeight: 500 }}>{q}</button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {messages.map((msg, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-start" : "flex-end" }}>
-                      <div style={{
-                        maxWidth: msg.role === "assistant" ? "88%" : "78%",
-                        background: msg.role === "user" ? "linear-gradient(135deg, #1a3a4a, #2d5a4a)" : "#fff",
-                        color: msg.role === "user" ? "#fff" : "#2c2c2c",
-                        borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                        padding: msg.role === "user" ? "12px 16px" : "14px 18px",
-                        boxShadow: "0 1px 6px rgba(0,0,0,0.08)", fontSize: "13.5px", lineHeight: 1.65,
-                        border: msg.role === "assistant" ? "1px solid rgba(0,0,0,0.04)" : "none",
-                      }}>
-                        {msg.loading ? (
-                          <div style={{ display: "flex", gap: "5px", padding: "6px 2px", alignItems: "center" }}>
-                            {[0, 1, 2].map((j) => <div key={j} style={{ width: 7, height: 7, borderRadius: "50%", background: "#2d8a6e", animation: `pulse 1.4s ease-in-out ${j * 0.2}s infinite` }} />)}
-                            <span style={{ fontSize: "11px", color: "#999", marginRight: "6px" }}>מנתח...</span>
-                          </div>
-                        ) : msg.role === "assistant" ? (
-                          <>
-                            {msg.usedSearch && <div style={TAG("#f0faf5", "#2d8a6e")}>🔍 כולל חיפוש</div>}
-                            {msg.ganttCmds && <div style={TAG("#fef3c7", "#92400e")}>📊 הגאנט עודכן ({msg.ganttCmds.length} {msg.ganttCmds.length === 1 ? "שינוי" : "שינויים"})</div>}
-                            <div style={{ marginTop: (msg.usedSearch || msg.ganttCmds) ? "8px" : 0 }}>{formatMsg(msg.content || "")}</div>
-                          </>
-                        ) : (
-                          <>
-                            {msg.displayPreviews?.length > 0 && (
-                              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
-                                {msg.displayPreviews.map((a, j) => <img key={j} src={a.preview} alt="" style={{ maxWidth: "160px", maxHeight: "100px", borderRadius: "8px", border: "2px solid rgba(255,255,255,0.3)" }} />)}
-                              </div>
-                            )}
-                            <div style={{ whiteSpace: "pre-wrap" }}>{msg.displayText || ""}</div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </>
-              )}
-            </div>
-
-            {/* Attachments */}
-            {attachments.length > 0 && (
-              <div style={{ padding: "8px 14px 0", background: "#fff", borderTop: "1px solid rgba(0,0,0,0.04)", display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {attachments.map((a, i) => (
-                  <div key={i} style={{ background: "#f5f0eb", borderRadius: "10px", padding: "5px 10px", display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", border: "1px solid rgba(0,0,0,0.06)" }}>
-                    {a.preview ? <img src={a.preview} alt="" style={{ width: 28, height: 28, borderRadius: "6px", objectFit: "cover" }} /> : <span>{a.type === "pdf" ? "📄" : "📝"}</span>}
-                    <span style={{ fontWeight: 500, maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
-                    <button onClick={() => removeAttachment(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "#999", fontSize: "13px", padding: "0 2px" }}>✕</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {processingFile && <div style={{ padding: "4px 14px", background: "#fff", textAlign: "center", fontSize: "12px", color: "#2d8a6e", fontWeight: 600 }}>⏳ מעבד...</div>}
-
-            {/* Input */}
-            <div style={{ borderTop: "1px solid rgba(0,0,0,0.06)", padding: "10px 14px", background: "#fff", flexShrink: 0 }}>
-              <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.csv,.json,.md,.html" multiple style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) Array.from(e.target.files).forEach(processFile); e.target.value = ""; }} />
-              <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", gap: "6px", alignItems: "flex-end" }}>
-                <button onClick={() => fileInputRef.current?.click()} title="צרף קובץ" style={{ width: 36, height: 36, borderRadius: "10px", background: "#f5f0eb", border: "1px solid rgba(0,0,0,0.08)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "15px", flexShrink: 0 }}>📎</button>
-                <div style={{ flex: 1, background: "#f5f0eb", borderRadius: "14px", border: "2px solid transparent", padding: "1px", transition: "border-color 0.2s" }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = "#2d8a6e"; }} onBlur={(e) => { e.currentTarget.style.borderColor = "transparent"; }}>
-                  <textarea ref={textareaRef} value={input} onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); } }}
-                    placeholder={attachments.length ? "הוסף הוראות (אופציונלי)..." : "שאל, הדבק הצעה, או גרור קובץ..."}
-                    rows={1} style={{ width: "100%", border: "none", background: "transparent", padding: "9px 12px", resize: "none", outline: "none", fontSize: "13.5px", lineHeight: 1.5, fontFamily: "inherit", direction: "rtl", maxHeight: "180px" }} />
-                </div>
-                <button onClick={() => sendMessage(input)} disabled={(!input.trim() && !attachments.length) || loading}
-                  style={{ width: 36, height: 36, borderRadius: "10px", background: (input.trim() || attachments.length) && !loading ? "linear-gradient(135deg, #1a3a4a, #2d6b5a)" : "#ddd", border: "none", cursor: (input.trim() || attachments.length) && !loading ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ transform: "scaleX(-1)" }}><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="#fff" /></svg>
-                </button>
-              </div>
-            </div>
-          </div>
+          <ChatTab activeKey={activeKey} provider={provider} setShowSettings={setShowSettings}
+            showIntro={showIntro} setShowIntro={setShowIntro}
+            messages={messages} messagesEndRef={messagesEndRef}
+            input={input} setInput={setInput} textareaRef={textareaRef}
+            loading={loading} sendMessage={sendMessage}
+            attachments={attachments} removeAttachment={removeAttachment} processingFile={processingFile}
+            dragOver={dragOver} setDragOver={setDragOver} handleDrop={handleDrop}
+            fileInputRef={fileInputRef} processFile={processFile} />
         )}
 
         {/* ═══ DOCS TAB ═══ */}
         {activeTab === "docs" && (
-          <div style={{ flex: 1, padding: "14px", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-              <div style={{ fontSize: "15px", fontWeight: 700, color: "#1a3a4a" }}>📄 ארכיון מסמכים</div>
-              <div style={{ fontSize: "12px", color: "#888" }}>מסמכים שצורפו ונותחו נשמרים אוטומטית</div>
-            </div>
-            {documents.length === 0 ? (
-              <div style={{ ...CARD, textAlign: "center", padding: "36px 20px", maxWidth: 450, margin: "20px auto" }}>
-                <div style={{ fontSize: "32px", marginBottom: "8px" }}>📄</div>
-                <div style={{ fontWeight: 700, color: "#1a3a4a", marginBottom: "4px" }}>אין מסמכים עדיין</div>
-                <p style={{ fontSize: "13px", color: "#888", margin: 0 }}>צרף הצעת מחיר או מסמך בצ'אט - והוא יישמר כאן אוטומטית עם הניתוח</p>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {documents.map((doc) => (
-                  <div key={doc.id} onClick={() => setViewDoc(doc)} style={{ ...CARD, cursor: "pointer", transition: "box-shadow 0.15s" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 3px 12px rgba(0,0,0,0.1)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 1px 6px rgba(0,0,0,0.05)"; }}>
-                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
-                      {doc.preview ? (
-                        <img src={doc.preview} alt="" style={{ width: 52, height: 52, borderRadius: "8px", objectFit: "cover", flexShrink: 0 }} />
-                      ) : (
-                        <div style={{ width: 52, height: 52, borderRadius: "8px", background: "#f5f0eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", flexShrink: 0 }}>
-                          {doc.type === "pdf" ? "📄" : doc.type === "image" ? "🖼️" : "📝"}
-                        </div>
-                      )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
-                          <div style={{ fontWeight: 700, fontSize: "14px", color: "#1a3a4a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.title}</div>
-                          <span style={TAG((docStColors[doc.status] || "#888") + "20", docStColors[doc.status] || "#888")}>{doc.status}</span>
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#888", marginBottom: "4px" }}>{doc.date}</div>
-                        <div style={{ fontSize: "12px", color: "#555", maxHeight: "32px", overflow: "hidden", lineHeight: 1.4 }}>
-                          {doc.analysis?.slice(0, 120)}...
-                        </div>
-                        {(doc.actionItems || []).length > 0 && (
-                          <div style={{ marginTop: "4px", fontSize: "11px", color: "#2d8a6e" }}>
-                            ✅ {doc.actionItems.filter((a) => a.done).length}/{doc.actionItems.length} צעדים הושלמו
-                          </div>
-                        )}
-                      </div>
-                      <button onClick={(e) => { e.stopPropagation(); setDocuments((p) => p.filter((d) => d.id !== doc.id)); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "13px", padding: "4px", flexShrink: 0 }}>🗑️</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <DocsTab documents={documents} setDocuments={setDocuments} setViewDoc={setViewDoc} />
         )}
 
         {/* ═══ GANTT TAB ═══ */}
