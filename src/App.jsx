@@ -177,6 +177,21 @@ function App() {
     return c;
   }, [knowledgeBase, phases, contractors, projectStart, budget]);
 
+  /* ─── Shared: parse & apply Gantt commands ─── */
+  const applyGanttCommands = useCallback((aText) => {
+    const { cleanText, ganttCmds } = parseGanttCommands(aText);
+
+    if (ganttCmds.length > 0) {
+      setGanttVersions((prev) => [...prev.slice(-19), {
+        id: uid(), date: new Date().toLocaleString("he-IL"),
+        label: ganttCmds.map((c) => `${c.action}: ${c.params[0]}`).join(", "),
+        phases: JSON.parse(JSON.stringify(phases)),
+      }]);
+      setPhases((prev) => applyGanttCommandsToPhases(ganttCmds, prev));
+    }
+    return { cleanText, ganttCmds };
+  }, [phases, setPhases, setGanttVersions]);
+
   const sendMessage = useCallback(async (text) => {
     if (!text.trim() && attachments.length === 0) return;
     setShowIntro(false);
@@ -271,21 +286,6 @@ function App() {
     }
     setLoading(false);
   }, [attachments, messages, buildCtx, setDocuments, provider, activeKey, applyGanttCommands]);
-
-  /* ─── Shared: parse & apply Gantt commands ─── */
-  const applyGanttCommands = useCallback((aText) => {
-    const { cleanText, ganttCmds } = parseGanttCommands(aText);
-
-    if (ganttCmds.length > 0) {
-      setGanttVersions((prev) => [...prev.slice(-19), {
-        id: uid(), date: new Date().toLocaleString("he-IL"),
-        label: ganttCmds.map((c) => `${c.action}: ${c.params[0]}`).join(", "),
-        phases: JSON.parse(JSON.stringify(phases)),
-      }]);
-      setPhases((prev) => applyGanttCommandsToPhases(ganttCmds, prev));
-    }
-    return { cleanText, ganttCmds };
-  }, [phases, setPhases, setGanttVersions]);
 
   /* ─── Gantt inline chat ─── */
   const sendGanttMessage = useCallback(async (text) => {
