@@ -13,7 +13,13 @@ export function useStorage(key, initial) {
     let cancelled = false;
     try {
       const stored = localStorage.getItem(key);
-      if (!cancelled && stored) setData(JSON.parse(stored));
+      if (!cancelled && stored) {
+        const parsed = JSON.parse(stored);
+        const valid = Array.isArray(initial)
+          ? Array.isArray(parsed)
+          : typeof parsed === typeof initial;
+        if (valid) setData(parsed);
+      }
     } catch {}
     if (!cancelled) setLoaded(true);
     return () => { cancelled = true; };
