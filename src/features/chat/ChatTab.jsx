@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CARD, TAG, BTN } from '../../ui/styles.js';
 import { formatMsg } from '../../ui/Markdown.jsx';
 import { CATEGORIES } from '../../utils/constants.js';
@@ -12,7 +12,9 @@ export function ChatTab({
   attachments, removeAttachment, processingFile,
   dragOver, setDragOver, handleDrop,
   fileInputRef, processFile,
+  documents, contractors, addStoredDocAsAttachment,
 }) {
+  const [showDocPicker, setShowDocPicker] = useState(false);
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative" }}
       onDrop={handleDrop} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}>
@@ -121,7 +123,38 @@ export function ChatTab({
       {/* Input */}
       <div style={{ borderTop: "1px solid rgba(0,0,0,0.06)", padding: "10px 14px", background: "#fff", flexShrink: 0 }}>
         <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.csv,.json,.md,.html" multiple style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) Array.from(e.target.files).forEach(processFile); e.target.value = ""; }} />
-        <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", gap: "6px", alignItems: "flex-end" }}>
+        <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", gap: "6px", alignItems: "flex-end", position: "relative" }}>
+          {showDocPicker && (
+            <div onClick={() => setShowDocPicker(false)}
+              style={{ position: "fixed", inset: 0, zIndex: 99 }} />
+          )}
+          {showDocPicker && (
+            <div style={{ position: "absolute", bottom: "44px", right: 0, background: "#fff", border: "1px solid rgba(0,0,0,0.1)", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 100, width: "280px", maxHeight: "260px", overflowY: "auto", padding: "6px" }}>
+              <div style={{ fontSize: "11px", color: "#999", padding: "4px 8px 6px", fontWeight: 600 }}>מסמכים שמורים</div>
+              {!documents?.length ? (
+                <div style={{ padding: "12px", fontSize: "12px", color: "#aaa", textAlign: "center" }}>אין מסמכים שמורים</div>
+              ) : documents.map((doc) => {
+                const ctractor = contractors?.find((x) => x.id === doc.contractorId);
+                const icon = doc.type === "image" ? "🖼️" : doc.type === "pdf" ? "📄" : "📝";
+                return (
+                  <button key={doc.id}
+                    onClick={() => { addStoredDocAsAttachment(doc); setShowDocPicker(false); }}
+                    style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%", padding: "8px 10px", border: "none", background: "transparent", cursor: "pointer", borderRadius: "8px", fontFamily: "inherit", textAlign: "right" }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "#f5f0eb"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  >
+                    <span style={{ fontSize: "16px", flexShrink: 0 }}>{icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: "12px", fontWeight: 600, color: "#1a3a4a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.title}</div>
+                      <div style={{ fontSize: "10.5px", color: "#888" }}>{ctractor ? ctractor.name : "ללא קבלן"} · {doc.date}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <button onClick={() => setShowDocPicker((v) => !v)} title="מסמך שמור"
+            style={{ width: 36, height: 36, borderRadius: "10px", background: showDocPicker ? "#e0f0ea" : "#f5f0eb", border: showDocPicker ? "1px solid #2d8a6e" : "1px solid rgba(0,0,0,0.08)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "15px", flexShrink: 0 }}>📁</button>
           <button onClick={() => fileInputRef.current?.click()} title="צרף קובץ" style={{ width: 36, height: 36, borderRadius: "10px", background: "#f5f0eb", border: "1px solid rgba(0,0,0,0.08)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "15px", flexShrink: 0 }}>📎</button>
           <div style={{ flex: 1, background: "#f5f0eb", borderRadius: "14px", border: "2px solid transparent", padding: "1px", transition: "border-color 0.2s" }}
             onFocus={(e) => { e.currentTarget.style.borderColor = "#2d8a6e"; }} onBlur={(e) => { e.currentTarget.style.borderColor = "transparent"; }}>
