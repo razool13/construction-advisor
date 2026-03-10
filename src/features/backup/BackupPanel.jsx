@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Overlay } from '../../ui/Overlay.jsx';
 import { BTN } from '../../ui/styles.js';
 import { formatDate, todayStr } from '../../utils/dates.js';
-import { stLabels, GOOGLE_CLIENT_ID } from '../../utils/constants.js';
+import { stLabels, GOOGLE_CLIENT_ID, CONTRACTOR_DOC_TEMPLATES } from '../../utils/constants.js';
 
 export function BackupPanel({ onClose, knowledgeBase, phases, contractors, documents, projectStart, budget, dailyLogs, punchList, setKnowledgeBase, setPhases, setContractors, setDocuments, setProjectStart, setBudget, setDailyLogs, setPunchList, lastBackup, updateLastBackup }) {
   const [importStatus, setImportStatus] = useState("");
@@ -52,6 +52,25 @@ export function BackupPanel({ onClose, knowledgeBase, phases, contractors, docum
     s.onload = resolve;
     document.head.appendChild(s);
   });
+
+  const getOrCreateSubFolder = async (token, parentId, name) => {
+    const q = `name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`, {
+      headers: { Authorization: "Bearer " + token },
+    });
+    const data = await r.json();
+    if (data.files?.length > 0) return data.files[0].id;
+    const cr = await fetch("https://www.googleapis.com/drive/v3/files", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }),
+    });
+    const fd = await cr.json();
+    return fd.id;
+  };
+
+  const base64ToBlob = (base64, mimeType) =>
+    fetch(`data:${mimeType};base64,${base64}`).then(r => r.blob());
 
   const getOrCreateFolder = async (token) => {
     const folderName = "גיבויי פרויקט בנייה";
@@ -145,6 +164,45 @@ export function BackupPanel({ onClose, knowledgeBase, phases, contractors, docum
       };
       await uploadFile(`גיבוי_${stamp}.json`, JSON.stringify(backup, null, 2), "application/json");
       await uploadFile(`סיכום_${stamp}.txt`, buildSummaryText(), "text/plain");
+
+      // Upload individual document files into contractor subfolders
+      const docsWithFiles = documents.filter(d => d.rawFile && d.contractorId);
+      if (docsWithFiles.length > 0) {
+        setDriveStatus("⏳ מעלה קבצי מסמכים לתיקיות קבלנים...");
+        const contractorMap = new Map(contractors.map(c => [c.id, c]));
+        const folderCache = {};
+        const updatedDriveIds = {};
+        for (const doc of docsWithFiles) {
+          const contractor = contractorMap.get(doc.contractorId);
+          if (!contractor) continue;
+          const contractorKey = `root_${contractor.name}`;
+          if (!folderCache[contractorKey]) {
+            folderCache[contractorKey] = await getOrCreateSubFolder(gToken, folderId, contractor.name);
+          }
+          const contractorFolderId = folderCache[contractorKey];
+          const categoryLabel = CONTRACTOR_DOC_TEMPLATES.find(t => t.id === doc.docCategory)?.label || "כללי";
+          const categoryKey = `${contractorKey}_${categoryLabel}`;
+          if (!folderCache[categoryKey]) {
+            folderCache[categoryKey] = await getOrCreateSubFolder(gToken, contractorFolderId, categoryLabel);
+          }
+          const categoryFolderId = folderCache[categoryKey];
+          const fileBlob = await base64ToBlob(doc.rawFile, doc.rawMimeType);
+          const form = new FormData();
+          form.append("metadata", new Blob([JSON.stringify({ name: doc.title, parents: [categoryFolderId] })], { type: "application/json" }));
+          form.append("file", fileBlob);
+          const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + gToken },
+            body: form,
+          });
+          const { id: driveFileId } = await res.json();
+          if (driveFileId) updatedDriveIds[doc.id] = driveFileId;
+        }
+        if (Object.keys(updatedDriveIds).length > 0) {
+          setDocuments(prev => prev.map(d => updatedDriveIds[d.id] ? { ...d, driveFileId: updatedDriveIds[d.id] } : d));
+        }
+      }
+
       setDriveStatus("✅ נשמר ב-Drive!");
       if (updateLastBackup) updateLastBackup();
       loadDriveFiles(gToken);

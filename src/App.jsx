@@ -143,24 +143,31 @@ function App() {
       const ext = file.name.split(".").pop().toLowerCase();
       const isImg = ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext);
       const isPdf = ext === "pdf";
-      let type = "text", preview = null, extractedContent = "";
+      let type = "text", preview = null, extractedContent = "", rawFile = null, rawMimeType = null;
       if (isImg) {
         const b64 = await toB64(file);
         preview = `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${b64}`;
         type = "image";
+        rawFile = b64;
+        rawMimeType = `image/${ext === "jpg" ? "jpeg" : ext}`;
       } else if (isPdf) {
         const ab = await toAB(file);
         const text = await extractPdfText(ab);
         extractedContent = (text || "").slice(0, 2000);
         type = "pdf";
+        rawFile = await toB64(file);
+        rawMimeType = "application/pdf";
       } else {
         const text = await toTxt(file);
         extractedContent = (text || "").slice(0, 2000);
+        rawFile = btoa(unescape(encodeURIComponent(extractedContent)));
+        rawMimeType = "text/plain";
       }
       setDocuments((prev) => [{
         id: uid(), title: file.name, type,
         date: new Date().toLocaleString("he-IL"), fileNames: [file.name],
-        preview, extractedContent, analysis: "", conversation: [],
+        preview, extractedContent, rawFile, rawMimeType,
+        analysis: "", conversation: [],
         actionItems: [], notes: "", status: "חדש", contractorId,
       }, ...prev]);
     } catch (e) { console.error(e); }
@@ -799,6 +806,19 @@ function App() {
               }} rows={3} style={{ ...INP, resize: "vertical", fontSize: "13px" }} placeholder="הערות..." />
             </div>
 
+            <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+              {viewDoc.rawFile && (
+                <button onClick={async () => {
+                  const blob = await fetch(`data:${viewDoc.rawMimeType};base64,${viewDoc.rawFile}`).then(r => r.blob());
+                  const url = URL.createObjectURL(blob);
+                  window.open(url, "_blank");
+                }} style={{ ...BTN("#f0faf5", "#16a34a"), flex: 1 }}>👁️ פתח מסמך</button>
+              )}
+              {viewDoc.driveFileId && (
+                <button onClick={() => window.open(`https://drive.google.com/file/d/${viewDoc.driveFileId}/view`, "_blank")}
+                  style={{ ...BTN("#f0f7ff", "#1e40af"), flex: 1 }}>📂 פתח בDrive</button>
+              )}
+            </div>
             <button onClick={() => { setViewDoc(null); setActiveTab("chat"); setInput(`לגבי "${viewDoc.title}" - `); setTimeout(() => textareaRef.current?.focus(), 100); }}
               style={{ ...BTN(), width: "100%" }}>💬 שאל המשך על המסמך</button>
           </div>
