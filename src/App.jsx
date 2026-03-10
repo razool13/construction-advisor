@@ -137,7 +137,7 @@ function App() {
   }, []);
 
   /* ─── Direct doc upload for contractor ─── */
-  const addDocForContractor = useCallback(async (file, contractorId) => {
+  const addDocForContractor = useCallback(async (file, contractorId, docCategory) => {
     setProcessingFile(true);
     try {
       const ext = file.name.split(".").pop().toLowerCase();
@@ -169,6 +169,7 @@ function App() {
         preview, extractedContent, rawFile, rawMimeType,
         analysis: "", conversation: [],
         actionItems: [], notes: "", status: "חדש", contractorId,
+        ...(docCategory ? { docCategory } : {}),
       }, ...prev]);
     } catch (e) { console.error(e); }
     setProcessingFile(false);
@@ -325,11 +326,18 @@ function App() {
 
       // Auto-save as document
       if (fileNames.length > 0) {
+        const firstAttach = curAttach[0];
+        const savedRawFile = firstAttach?.data || null;
+        const savedRawMimeType = firstAttach?.type === "image"
+          ? (firstAttach.mediaType || null)
+          : firstAttach?.type === "pdf" ? "application/pdf" : null;
         setDocuments((prev) => [{
-          id: uid(), title: fileNames.join(", "), type: curAttach[0]?.type || "text",
+          id: uid(), title: fileNames.join(", "), type: firstAttach?.type || "text",
           date: new Date().toLocaleString("he-IL"), fileNames,
           preview: displayPreviews[0]?.preview || null,
           extractedContent: textParts.join("\n\n").slice(0, 2000),
+          rawFile: savedRawFile,
+          rawMimeType: savedRawMimeType,
           analysis: aText,
           conversation: [{ role: "user", text: displayText }, { role: "assistant", text: aText }],
           actionItems: [], notes: "", status: "חדש",
@@ -743,7 +751,15 @@ function App() {
 
             <div style={{ background: "#f0faf5", borderRadius: "12px", padding: "14px", marginBottom: "12px", border: "1px solid #2d8a6e20" }}>
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a3a4a", marginBottom: "8px" }}>🔍 ניתוח</div>
-              <div style={{ fontSize: "13px", lineHeight: 1.65, maxHeight: "300px", overflowY: "auto" }}>{formatMsg(viewDoc.analysis || "")}</div>
+              {viewDoc.analysis ? (
+                <div style={{ fontSize: "13px", lineHeight: 1.65, maxHeight: "300px", overflowY: "auto" }}>{formatMsg(viewDoc.analysis)}</div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: "12px", color: "#888", marginBottom: "8px" }}>אין ניתוח עדיין</div>
+                  <button onClick={() => { addStoredDocAsAttachment(viewDoc); setViewDoc(null); setActiveTab("chat"); setInput("נתח את המסמך"); setTimeout(() => textareaRef.current?.focus(), 100); }}
+                    style={{ ...BTN("#2d8a6e", "#fff"), fontSize: "12.5px", padding: "6px 14px" }}>🔍 נתח מסמך</button>
+                </div>
+              )}
             </div>
 
             {viewDoc.timeline?.length > 0 && (
@@ -862,7 +878,7 @@ function App() {
                   style={{ ...BTN("#f0f7ff", "#1e40af"), flex: 1 }}>📂 פתח בDrive</button>
               )}
             </div>
-            <button onClick={() => { setViewDoc(null); setActiveTab("chat"); setInput(`לגבי "${viewDoc.title}" - `); setTimeout(() => textareaRef.current?.focus(), 100); }}
+            <button onClick={() => { addStoredDocAsAttachment(viewDoc); setViewDoc(null); setActiveTab("chat"); setInput(`לגבי "${viewDoc.title}" - `); setTimeout(() => textareaRef.current?.focus(), 100); }}
               style={{ ...BTN(), width: "100%" }}>💬 שאל המשך על המסמך</button>
           </div>
         </Overlay>
@@ -1148,7 +1164,10 @@ function App() {
             onPhaseClick={(phaseId) => { setHighlightPhaseId(phaseId); setActiveTab("gantt"); }}
             documents={documents}
             onDocClick={(doc) => setViewDoc(doc)}
-            onAddDoc={addDocForContractor} />
+            onAddDoc={addDocForContractor}
+            onLinkDoc={(docId, contractorId, category) => {
+              setDocuments((p) => p.map((d) => d.id === docId ? { ...d, contractorId, docCategory: category } : d));
+            }} />
         )}
 
         {/* ═══ BUDGET TAB ═══ */}
