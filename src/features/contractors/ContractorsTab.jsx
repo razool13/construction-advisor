@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CARD, TAG, BTN } from '../../ui/styles.js';
 import { formatDate } from '../../utils/dates.js';
 import { stColors, WA_TEMPLATES, CONTRACTOR_DOC_TEMPLATES, docStColors } from '../../utils/constants.js';
 
-export function ContractorsTab({ contractors, phases, setEditContractor, setWaCompose, setWaText, openWhatsApp, onPhaseClick, documents = [], onDocClick, onAddDoc }) {
+export function ContractorsTab({ contractors, phases, setEditContractor, setWaCompose, setWaText, openWhatsApp, onPhaseClick, documents = [], onDocClick, onAddDoc, onLinkDoc }) {
+  const [pickerState, setPickerState] = useState(null); // { contractorId, category, contractorName }
+
   return (
     <div style={{ flex: 1, padding: "14px", overflowY: "auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
@@ -52,12 +54,21 @@ export function ContractorsTab({ contractors, phases, setEditContractor, setWaCo
                     return (
                       <span
                         key={tpl.id}
+                        onClick={() => {
+                          if (present) {
+                            const doc = contractorDocs.find((d) => d.docCategory === tpl.id);
+                            if (doc) onDocClick && onDocClick(doc);
+                          } else {
+                            setPickerState({ contractorId: c.id, category: tpl.id, contractorName: c.name });
+                          }
+                        }}
                         style={{
                           ...TAG(present ? "#22c55e20" : "#f59e0b20", present ? "#16a34a" : "#b45309"),
                           fontSize: "11px",
                           border: `1px solid ${present ? "#22c55e40" : "#f59e0b40"}`,
+                          cursor: "pointer",
                         }}
-                        title={present ? "קיים" : "חסר"}
+                        title={present ? "לחץ לפתיחת המסמך" : "לחץ לקישור מסמך"}
                       >
                         {present ? "✓" : "!"} {tpl.icon} {tpl.label}
                       </span>
@@ -137,6 +148,87 @@ export function ContractorsTab({ contractors, phases, setEditContractor, setWaCo
               return <button key={c.id} onClick={() => openWhatsApp(c.phone, WA_TEMPLATES[0].text.replace("{name}", c.name).replace("{phase}", cp.name || "השלב").replace("{progress}", cp.progress || 0).replace("{startDate}", formatDate(cp.start)).replace("{endDate}", formatDate(cp.end)))}
                 style={{ ...BTN("#25d36620", "#25d366"), fontSize: "11px", padding: "4px 8px", border: "1px solid #25d36640" }}>📱 {c.name}</button>;
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Document picker overlay */}
+      {pickerState && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}
+          onClick={() => setPickerState(null)}>
+          <div style={{ background: "#fff", borderRadius: "16px", width: "100%", maxWidth: "480px", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "15px", color: "#1a3a4a" }}>
+                  {CONTRACTOR_DOC_TEMPLATES.find((t) => t.id === pickerState.category)?.icon}{" "}
+                  {CONTRACTOR_DOC_TEMPLATES.find((t) => t.id === pickerState.category)?.label}
+                </div>
+                <div style={{ fontSize: "12px", color: "#888" }}>בחר מסמך לקישור ל{pickerState.contractorName}</div>
+              </div>
+              <button onClick={() => setPickerState(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "18px", color: "#888" }}>✕</button>
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, padding: "12px 16px" }}>
+              {documents.length === 0 ? (
+                <div style={{ textAlign: "center", color: "#888", padding: "24px", fontSize: "13px" }}>אין מסמכים בארכיון</div>
+              ) : (
+                <>
+                  {/* Documents matching this category first */}
+                  {documents.filter((d) => d.docCategory === pickerState.category).length > 0 && (
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#6366f1", marginBottom: "6px", textTransform: "uppercase" }}>
+                      מסמכים מאותה קטגוריה
+                    </div>
+                  )}
+                  {documents.filter((d) => d.docCategory === pickerState.category).map((doc) => (
+                    <div key={doc.id} onClick={() => { onLinkDoc && onLinkDoc(doc.id, pickerState.contractorId, pickerState.category); setPickerState(null); }}
+                      style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", borderRadius: "10px", background: "#f5f0ff", cursor: "pointer", marginBottom: "6px", border: "1px solid #6366f130" }}>
+                      <span style={{ fontSize: "18px" }}>{doc.type === "pdf" ? "📄" : doc.type === "image" ? "🖼️" : "📝"}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: "13px", color: "#1a3a4a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.title}</div>
+                        <div style={{ fontSize: "11px", color: "#888" }}>{doc.date}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {/* All other documents */}
+                  {documents.filter((d) => d.docCategory !== pickerState.category).length > 0 && (
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#888", marginBottom: "6px", marginTop: "8px", textTransform: "uppercase" }}>
+                      כל המסמכים
+                    </div>
+                  )}
+                  {documents.filter((d) => d.docCategory !== pickerState.category).map((doc) => (
+                    <div key={doc.id} onClick={() => { onLinkDoc && onLinkDoc(doc.id, pickerState.contractorId, pickerState.category); setPickerState(null); }}
+                      style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", borderRadius: "10px", background: "#f8f6f3", cursor: "pointer", marginBottom: "6px", border: "1px solid #eee" }}>
+                      <span style={{ fontSize: "18px" }}>{doc.type === "pdf" ? "📄" : doc.type === "image" ? "🖼️" : "📝"}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: "13px", color: "#1a3a4a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.title}</div>
+                        <div style={{ fontSize: "11px", color: "#888" }}>{doc.date}</div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            {/* Upload new file option */}
+            <div style={{ padding: "12px 16px", borderTop: "1px solid #eee" }}>
+              <input
+                type="file"
+                id={`picker-upload-${pickerState.contractorId}-${pickerState.category}`}
+                style={{ display: "none" }}
+                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.txt,.doc,.docx"
+                onChange={(e) => {
+                  const file = e.target.files[0];
+                  if (file && onAddDoc) {
+                    onAddDoc(file, pickerState.contractorId, pickerState.category);
+                    setPickerState(null);
+                    e.target.value = "";
+                  }
+                }}
+              />
+              <label htmlFor={`picker-upload-${pickerState.contractorId}-${pickerState.category}`}
+                style={{ ...BTN("#f5f0eb", "#2c2c2c"), fontSize: "12px", padding: "7px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                📎 העלה מסמך חדש
+              </label>
+            </div>
           </div>
         </div>
       )}
