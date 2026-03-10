@@ -3,7 +3,7 @@ import { CARD, TAG, BTN } from '../../ui/styles.js';
 import { formatDate } from '../../utils/dates.js';
 import { stColors, WA_TEMPLATES } from '../../utils/constants.js';
 
-export function ContractorsTab({ contractors, phases, setEditContractor, setWaCompose, setWaText, openWhatsApp }) {
+export function ContractorsTab({ contractors, phases, setEditContractor, setWaCompose, setWaText, openWhatsApp, onPhaseClick }) {
   return (
     <div style={{ flex: 1, padding: "14px", overflowY: "auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
@@ -27,7 +27,7 @@ export function ContractorsTab({ contractors, phases, setEditContractor, setWaCo
                   <div><div style={{ fontWeight: 700, fontSize: "14.5px", color: "#1a3a4a" }}>{c.name}</div><div style={{ fontSize: "12px", color: "#888" }}>{c.role}{c.phone ? ` • ${c.phone}` : ""}</div></div>
                   <button onClick={() => setEditContractor({ ...c })} style={{ background: "none", border: "none", cursor: "pointer" }}>✏️</button>
                 </div>
-                {ap.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "6px" }}>{ap.map((p) => <span key={p.id} style={TAG(stColors[p.status] + "20", stColors[p.status])}>{p.name} ({p.progress || 0}%)</span>)}</div>}
+                {ap.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "6px" }}>{ap.map((p) => <span key={p.id} onClick={() => onPhaseClick && onPhaseClick(p.id)} style={{ ...TAG(stColors[p.status] + "20", stColors[p.status]), cursor: "pointer" }}>{p.name} ({p.progress || 0}%)</span>)}</div>}
                 {c.phone && (
                   <div style={{ display: "flex", gap: "5px", marginTop: "8px", flexWrap: "wrap" }}>
                     <button onClick={() => { const cp = ap[0] || {}; setWaCompose(c); setWaText(WA_TEMPLATES[0].text.replace("{name}", c.name).replace("{phase}", cp.name || "השלב").replace("{progress}", cp.progress || 0).replace("{startDate}", formatDate(cp.start)).replace("{endDate}", formatDate(cp.end))); }} style={{ ...BTN("#25d366", "#fff"), fontSize: "12px", padding: "5px 10px" }}>📱 וואטסאפ</button>
