@@ -542,6 +542,18 @@ function App() {
             <span style={{ fontSize: "16px", fontWeight: 700, color: "#1a3a4a" }}>{editContractor.id ? "עריכת קבלן" : "קבלן חדש"}</span>
           </div>
           <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: "8px" }}>
+            {"contacts" in navigator && <button onClick={async () => {
+              try {
+                const [contact] = await navigator.contacts.select(["name", "tel"], { multiple: false });
+                if (contact) {
+                  setEditContractor((p) => ({
+                    ...p,
+                    name: contact.name?.[0] || p.name || "",
+                    phone: contact.tel?.[0] || p.phone || "",
+                  }));
+                }
+              } catch (e) { if (e.name !== "InvalidStateError") console.warn(e); }
+            }} style={{ ...BTN("#e0f2fe", "#0369a1"), fontSize: "13px", padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>📇 ייבוא מאנשי קשר</button>}
             <input value={editContractor.name || ""} onChange={(e) => setEditContractor((p) => ({ ...p, name: e.target.value }))} style={INP} placeholder="שם" />
             <input value={editContractor.role || ""} onChange={(e) => setEditContractor((p) => ({ ...p, role: e.target.value }))} style={INP} placeholder="תפקיד" />
             <input value={editContractor.phone || ""} onChange={(e) => setEditContractor((p) => ({ ...p, phone: e.target.value }))} style={{ ...INP, direction: "ltr", textAlign: "right" }} placeholder="050-1234567" />
