@@ -10,6 +10,7 @@ export function GanttTab({
   ganttChat, setGanttChat, ganttInput, setGanttInput, ganttLoading,
   sendGanttMessage, setEditPhase,
   anthropicKey, openaiKey, geminiKey,
+  highlightPhaseId, setHighlightPhaseId,
 }) {
   const [showGanttHistory, setShowGanttHistory] = useState(false);
   const [dragPhaseId, setDragPhaseId] = useState(null);
@@ -17,6 +18,19 @@ export function GanttTab({
   const ganttChatRef = useRef(null);
   const ganttInputRef = useRef(null);
   const ganttScrollRef = useRef(null);
+  const phaseRowRefs = useRef({});
+
+  // Scroll to and auto-clear highlighted phase
+  useEffect(() => {
+    if (highlightPhaseId) {
+      const el = phaseRowRefs.current[highlightPhaseId];
+      if (el) {
+        setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+      }
+      const timer = setTimeout(() => setHighlightPhaseId && setHighlightPhaseId(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightPhaseId, setHighlightPhaseId]);
 
   // Auto-scroll Gantt chart to today's position
   useEffect(() => {
@@ -142,9 +156,11 @@ export function GanttTab({
                   const w = clamp(daysBetween(phase.start, phase.end) / totalDays * 100, 0.5, 100 - sOff);
                   const isDragging = dragPhaseId === phase.id;
                   const isOver = dragOverIdx === idx && dragPhaseId !== phase.id;
+                  const isHighlighted = highlightPhaseId === phase.id;
                   return (
                     <div
                       key={phase.id}
+                      ref={(el) => { phaseRowRefs.current[phase.id] = el; }}
                       draggable
                       onDragStart={(e) => { setDragPhaseId(phase.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", phase.id); }}
                       onDragEnd={() => { setDragPhaseId(null); setDragOverIdx(null); }}
@@ -170,7 +186,10 @@ export function GanttTab({
                         display: "flex", alignItems: "center", marginBottom: "2px", cursor: isDragging ? "grabbing" : "grab", padding: "3px 0",
                         opacity: isDragging ? 0.4 : 1,
                         borderTop: isOver ? "2px solid #2d8a6e" : "2px solid transparent",
-                        transition: "border-top 0.15s, opacity 0.15s",
+                        transition: "border-top 0.15s, opacity 0.15s, background 0.5s, box-shadow 0.5s",
+                        background: isHighlighted ? "#d1fae5" : "transparent",
+                        boxShadow: isHighlighted ? "0 0 8px rgba(45,138,110,0.4)" : "none",
+                        borderRadius: isHighlighted ? "6px" : "0",
                       }}
                     >
                       <div style={{ width: "120px", flexShrink: 0, paddingLeft: "4px", display: "flex", alignItems: "center", gap: "2px", position: "sticky", right: 0, zIndex: 3, background: "#f5f0eb" }}>

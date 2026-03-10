@@ -58,6 +58,7 @@ function App() {
   const [kbInput, setKbInput] = useState("");
   const [editingKB, setEditingKB] = useState(null);
   const [editPhase, setEditPhase] = useState(null);
+  const [highlightPhaseId, setHighlightPhaseId] = useState(null);
   const [editContractor, setEditContractor] = useState(null);
   const [waCompose, setWaCompose] = useState(null);
   const [waText, setWaText] = useState("");
@@ -514,7 +515,7 @@ function App() {
             </div>
             <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
               {Object.entries(stLabels).map(([k, v]) => (
-                <button key={k} onClick={() => setEditPhase((p) => ({ ...p, status: k }))} style={BTN(editPhase.status === k ? stColors[k] : "#f0f0f0", editPhase.status === k ? "#fff" : "#555")}>{v}</button>
+                <button key={k} onClick={() => setEditPhase((p) => ({ ...p, status: k, progress: k === "done" ? 100 : p.progress }))} style={BTN(editPhase.status === k ? stColors[k] : "#f0f0f0", editPhase.status === k ? "#fff" : "#555")}>{v}</button>
               ))}
             </div>
             <div>
@@ -984,14 +985,16 @@ function App() {
             ganttChat={ganttChat} setGanttChat={setGanttChat}
             ganttInput={ganttInput} setGanttInput={setGanttInput} ganttLoading={ganttLoading}
             sendGanttMessage={sendGanttMessage} setEditPhase={setEditPhase}
-            anthropicKey={anthropicKey} openaiKey={openaiKey} geminiKey={geminiKey} />
+            anthropicKey={anthropicKey} openaiKey={openaiKey} geminiKey={geminiKey}
+            highlightPhaseId={highlightPhaseId} setHighlightPhaseId={setHighlightPhaseId} />
         )}
 
         {/* ═══ CONTRACTORS TAB ═══ */}
         {activeTab === "contractors" && (
           <ContractorsTab contractors={contractors} phases={phases}
             setEditContractor={setEditContractor} setWaCompose={setWaCompose}
-            setWaText={setWaText} openWhatsApp={openWhatsApp} />
+            setWaText={setWaText} openWhatsApp={openWhatsApp}
+            onPhaseClick={(phaseId) => { setHighlightPhaseId(phaseId); setActiveTab("gantt"); }} />
         )}
 
         {/* ═══ BUDGET TAB ═══ */}
