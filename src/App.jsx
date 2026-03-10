@@ -186,6 +186,39 @@ function App() {
     });
   }, []);
 
+  const addStoredDocAsAttachment = useCallback((doc) => {
+    if (!doc.rawFile) {
+      setAttachments((p) => [...p, {
+        type: "text",
+        name: doc.title,
+        extractedText: `[${doc.title}]\n${doc.extractedContent || ""}`,
+      }]);
+      return;
+    }
+    if (doc.type === "image") {
+      setAttachments((p) => [...p, {
+        type: "image",
+        name: doc.title,
+        data: doc.rawFile,
+        preview: doc.preview || null,
+        mediaType: doc.rawMimeType,
+      }]);
+    } else if (doc.type === "pdf") {
+      setAttachments((p) => [...p, {
+        type: "pdf",
+        name: doc.title,
+        data: doc.rawFile,
+        extractedText: doc.extractedContent || "",
+      }]);
+    } else {
+      setAttachments((p) => [...p, {
+        type: "text",
+        name: doc.title,
+        extractedText: `[${doc.title}]\n${doc.extractedContent || ""}`,
+      }]);
+    }
+  }, []);
+
   /* ─── KB ─── */
   const saveKB = useCallback(() => {
     if (!kbTitle.trim() || !kbInput.trim()) return;
@@ -213,8 +246,18 @@ function App() {
       const totalA = budget.reduce((s, b) => s + (b.actual || 0), 0);
       c += `\n--- תקציב ---\nסה"כ מתוכנן: ₪${totalP.toLocaleString()}, בפועל: ₪${totalA.toLocaleString()}, ${totalA <= totalP ? "בתקציב" : "חריגה של ₪" + (totalA - totalP).toLocaleString()}\n`;
     }
+    if (documents.length) {
+      c += "\n\n--- מסמכים שמורים ---\n";
+      documents.slice(0, 15).forEach((d, i) => {
+        const ctractor = contractors.find((x) => x.id === d.contractorId);
+        const who = ctractor ? `קבלן: ${ctractor.name}` : "ללא קבלן";
+        const kind = d.rawMimeType === "application/pdf" ? "PDF" : d.rawMimeType?.startsWith("image/") ? "תמונה" : "טקסט";
+        const snippet = (d.extractedContent || "").slice(0, 400);
+        c += `[${i + 1}] "${d.title}" (${kind}, ${who}, ${d.date}):\n${snippet || "(אין תוכן טקסטואלי)"}\n`;
+      });
+    }
     return c;
-  }, [knowledgeBase, phases, contractors, projectStart, budget]);
+  }, [knowledgeBase, phases, contractors, projectStart, budget, documents]);
 
   /* ─── Shared: parse & apply Gantt commands ─── */
   const applyGanttCommands = useCallback((aText) => {
@@ -1073,7 +1116,9 @@ function App() {
             loading={loading} sendMessage={sendMessage}
             attachments={attachments} removeAttachment={removeAttachment} processingFile={processingFile}
             dragOver={dragOver} setDragOver={setDragOver} handleDrop={handleDrop}
-            fileInputRef={fileInputRef} processFile={processFile} />
+            fileInputRef={fileInputRef} processFile={processFile}
+            documents={documents} contractors={contractors}
+            addStoredDocAsAttachment={addStoredDocAsAttachment} />
         )}
 
         {/* ═══ DOCS TAB ═══ */}
