@@ -6,7 +6,7 @@ import { extractPdfText, toB64, toAB, toTxt } from './utils/files.js';
 import {
   APP_VERSION, GOOGLE_CLIENT_ID,
   stColors, stLabels, stCycle, docStColors,
-  PHASES_TEMPLATE, WA_TEMPLATES, CATEGORIES
+  PHASES_TEMPLATE, WA_TEMPLATES, CATEGORIES, CONTRACTOR_DOC_TEMPLATES
 } from './utils/constants.js';
 
 // UI
@@ -616,6 +616,47 @@ function App() {
               <button onClick={() => setViewDoc(null)} style={BTN("#f0f0f0", "#555")}>✕</button>
             </div>
           </div>
+          {/* Contractor + category assignment row */}
+          <div style={{ padding: "8px 20px 10px", borderBottom: "1px solid #eee", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", color: "#888", fontWeight: 600, flexShrink: 0 }}>👷 קבלן:</span>
+            <select
+              value={viewDoc.contractorId || ""}
+              onChange={(e) => {
+                const val = e.target.value || null;
+                setDocuments((p) => p.map((d) => d.id === viewDoc.id ? { ...d, contractorId: val } : d));
+                setViewDoc((p) => ({ ...p, contractorId: val }));
+              }}
+              style={{ flex: 1, minWidth: "120px", border: "2px solid #eee", borderRadius: "8px", padding: "5px 10px", fontSize: "12.5px", fontFamily: "inherit", cursor: "pointer", outline: "none", background: "#fff" }}
+            >
+              <option value="">-- לא משויך --</option>
+              {contractors.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}{c.role ? ` (${c.role})` : ""}</option>
+              ))}
+            </select>
+            {viewDoc.contractorId && (
+              <button
+                onClick={() => { setViewDoc(null); setActiveTab("contractors"); }}
+                style={{ ...BTN("#1a3a4a15", "#1a3a4a"), fontSize: "11px", padding: "5px 10px", flexShrink: 0 }}
+              >
+                ← לקבלן
+              </button>
+            )}
+            <span style={{ fontSize: "12px", color: "#888", fontWeight: 600, flexShrink: 0 }}>🗂️ קטגוריה:</span>
+            <select
+              value={viewDoc.docCategory || ""}
+              onChange={(e) => {
+                const val = e.target.value || null;
+                setDocuments((p) => p.map((d) => d.id === viewDoc.id ? { ...d, docCategory: val } : d));
+                setViewDoc((p) => ({ ...p, docCategory: val }));
+              }}
+              style={{ flex: 1, minWidth: "120px", border: "2px solid #eee", borderRadius: "8px", padding: "5px 10px", fontSize: "12.5px", fontFamily: "inherit", cursor: "pointer", outline: "none", background: "#fff" }}
+            >
+              <option value="">-- קטגוריה --</option>
+              {CONTRACTOR_DOC_TEMPLATES.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>{tpl.icon} {tpl.label}</option>
+              ))}
+            </select>
+          </div>
           <div style={{ padding: "16px 20px" }}>
             {viewDoc.preview && <img src={viewDoc.preview} alt="" style={{ maxWidth: "100%", maxHeight: "180px", borderRadius: "10px", border: "1px solid #eee", marginBottom: "12px", display: "block" }} />}
 
@@ -986,7 +1027,9 @@ function App() {
 
         {/* ═══ DOCS TAB ═══ */}
         {activeTab === "docs" && (
-          <DocsTab documents={documents} setDocuments={setDocuments} setViewDoc={setViewDoc} />
+          <DocsTab documents={documents} setDocuments={setDocuments} setViewDoc={setViewDoc}
+            contractors={contractors}
+            onContractorClick={() => setActiveTab("contractors")} />
         )}
 
         {/* ═══ GANTT TAB ═══ */}
@@ -1006,7 +1049,9 @@ function App() {
           <ContractorsTab contractors={contractors} phases={phases}
             setEditContractor={setEditContractor} setWaCompose={setWaCompose}
             setWaText={setWaText} openWhatsApp={openWhatsApp}
-            onPhaseClick={(phaseId) => { setHighlightPhaseId(phaseId); setActiveTab("gantt"); }} />
+            onPhaseClick={(phaseId) => { setHighlightPhaseId(phaseId); setActiveTab("gantt"); }}
+            documents={documents}
+            onDocClick={(doc) => setViewDoc(doc)} />
         )}
 
         {/* ═══ BUDGET TAB ═══ */}

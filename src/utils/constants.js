@@ -38,3 +38,12 @@ export const CATEGORIES = [
   { id: "research", icon: "🔍", label: "מחקר מוצרים" },
   { id: "chat", icon: "💬", label: "שיחה חופשית" },
 ];
+
+export const CONTRACTOR_DOC_TEMPLATES = [
+  { id: "quote",     icon: "📋", label: "הצעת מחיר" },
+  { id: "contract",  icon: "📝", label: "חוזה" },
+  { id: "insurance", icon: "🛡️", label: "ביטוח" },
+  { id: "license",   icon: "📜", label: "רישיון" },
+  { id: "invoice",   icon: "🧾", label: "חשבונית" },
+  { id: "warranty",  icon: "✅", label: "אחריות" },
+];
