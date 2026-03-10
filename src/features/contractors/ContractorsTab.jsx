@@ -3,7 +3,7 @@ import { CARD, TAG, BTN } from '../../ui/styles.js';
 import { formatDate } from '../../utils/dates.js';
 import { stColors, WA_TEMPLATES, CONTRACTOR_DOC_TEMPLATES, docStColors } from '../../utils/constants.js';
 
-export function ContractorsTab({ contractors, phases, setEditContractor, setWaCompose, setWaText, openWhatsApp, onPhaseClick, documents = [], onDocClick }) {
+export function ContractorsTab({ contractors, phases, setEditContractor, setWaCompose, setWaText, openWhatsApp, onPhaseClick, documents = [], onDocClick, onAddDoc }) {
   return (
     <div style={{ flex: 1, padding: "14px", overflowY: "auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
@@ -90,6 +90,25 @@ export function ContractorsTab({ contractors, phases, setEditContractor, setWaCo
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* Add document to contractor */}
+                {onAddDoc && (
+                  <div style={{ marginTop: "8px" }}>
+                    <input
+                      type="file"
+                      id={`doc-upload-${c.id}`}
+                      style={{ display: "none" }}
+                      accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.txt,.doc,.docx"
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file) { onAddDoc(file, c.id); e.target.value = ""; }
+                      }}
+                    />
+                    <label htmlFor={`doc-upload-${c.id}`} style={{ ...BTN("#f5f0eb", "#2c2c2c"), fontSize: "11.5px", padding: "5px 10px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                      📎 הוסף מסמך
+                    </label>
                   </div>
                 )}
 

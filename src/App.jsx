@@ -136,6 +136,37 @@ function App() {
     setProcessingFile(false);
   }, []);
 
+  /* ─── Direct doc upload for contractor ─── */
+  const addDocForContractor = useCallback(async (file, contractorId) => {
+    setProcessingFile(true);
+    try {
+      const ext = file.name.split(".").pop().toLowerCase();
+      const isImg = ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext);
+      const isPdf = ext === "pdf";
+      let type = "text", preview = null, extractedContent = "";
+      if (isImg) {
+        const b64 = await toB64(file);
+        preview = `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${b64}`;
+        type = "image";
+      } else if (isPdf) {
+        const ab = await toAB(file);
+        const text = await extractPdfText(ab);
+        extractedContent = (text || "").slice(0, 2000);
+        type = "pdf";
+      } else {
+        const text = await toTxt(file);
+        extractedContent = (text || "").slice(0, 2000);
+      }
+      setDocuments((prev) => [{
+        id: uid(), title: file.name, type,
+        date: new Date().toLocaleString("he-IL"), fileNames: [file.name],
+        preview, extractedContent, analysis: "", conversation: [],
+        actionItems: [], notes: "", status: "חדש", contractorId,
+      }, ...prev]);
+    } catch (e) { console.error(e); }
+    setProcessingFile(false);
+  }, [setDocuments]);
+
   const handleDrop = useCallback((e) => {
     e.preventDefault(); setDragOver(false);
     if (e.dataTransfer.files?.length) Array.from(e.dataTransfer.files).forEach(processFile);
@@ -1051,7 +1082,8 @@ function App() {
             setWaText={setWaText} openWhatsApp={openWhatsApp}
             onPhaseClick={(phaseId) => { setHighlightPhaseId(phaseId); setActiveTab("gantt"); }}
             documents={documents}
-            onDocClick={(doc) => setViewDoc(doc)} />
+            onDocClick={(doc) => setViewDoc(doc)}
+            onAddDoc={addDocForContractor} />
         )}
 
         {/* ═══ BUDGET TAB ═══ */}
