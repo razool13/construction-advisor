@@ -4,6 +4,8 @@ import { BTN, INP } from '../../ui/styles.js';
 
 export function SettingsPanel({ onClose, provider, setProvider, anthropicKey, setAnthropicKey, openaiKey, setOpenaiKey, geminiKey, setGeminiKey }) {
   const [settingsTab, setSettingsTab] = useState(provider);
+  const [openaiBaseUrl, setOpenaiBaseUrl] = useState(() => localStorage.getItem('openai-base-url') || '');
+  const [openaiModel, setOpenaiModel] = useState(() => localStorage.getItem('openai-model') || '');
 
   const PROVIDERS = [
     { id: "anthropic", label: "Anthropic", placeholder: "sk-ant-...", url: "https://console.anthropic.com/settings/keys", urlLabel: "console.anthropic.com ↗", key: anthropicKey, setKey: setAnthropicKey, storageKey: "anthropic-api-key" },
@@ -46,6 +48,24 @@ export function SettingsPanel({ onClose, provider, setProvider, anthropicKey, se
             {p.key
               ? <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px", fontWeight: 600 }}>✅ מפתח מוגדר</div>
               : <div style={{ fontSize: "12px", color: "#ef4444", marginTop: "6px", fontWeight: 600 }}>❌ נדרש מפתח</div>}
+            {p.id === "openai" && (
+              <div style={{ marginTop: "14px", borderTop: "1px solid #eee", paddingTop: "14px" }}>
+                <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "6px" }}>
+                  🌐 Endpoint מותאם אישית <span style={{ color: "#aaa" }}>(לרשת פנימית — השאר ריק לשימוש ב-api.openai.com)</span>
+                </div>
+                <input type="text" value={openaiBaseUrl}
+                  onChange={e => { setOpenaiBaseUrl(e.target.value); localStorage.setItem('openai-base-url', e.target.value); }}
+                  placeholder="http://your-internal-server:8080/v1"
+                  style={{ ...INP, direction: "ltr", fontFamily: "monospace" }} />
+                <div style={{ fontSize: "11.5px", color: "#888", marginBottom: "6px", marginTop: "10px" }}>
+                  🤖 שם מודל <span style={{ color: "#aaa" }}>(השאר ריק לשימוש ב-gpt-4o)</span>
+                </div>
+                <input type="text" value={openaiModel}
+                  onChange={e => { setOpenaiModel(e.target.value); localStorage.setItem('openai-model', e.target.value); }}
+                  placeholder="gpt-4o"
+                  style={{ ...INP, direction: "ltr", fontFamily: "monospace" }} />
+              </div>
+            )}
             {provider === p.id
               ? <div style={{ fontSize: "12px", color: "#2d8a6e", marginTop: "8px", fontWeight: 600 }}>✓ ספק פעיל</div>
               : <button onClick={() => { setProvider(p.id); localStorage.setItem("ai-provider", p.id); }} style={{ ...BTN(), marginTop: "8px", fontSize: "12px", padding: "6px 14px" }}>בחר ספק זה</button>}
