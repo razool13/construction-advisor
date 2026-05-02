@@ -86,7 +86,8 @@ export function ChatTab({
                     <>
                       {msg.usedSearch && <div style={TAG("#f0faf5", "#2d8a6e")}>🔍 כולל חיפוש</div>}
                       {msg.ganttCmds && <div style={TAG("#fef3c7", "#92400e")}>📊 הגאנט עודכן ({msg.ganttCmds.length} {msg.ganttCmds.length === 1 ? "שינוי" : "שינויים"})</div>}
-                      <div style={{ marginTop: (msg.usedSearch || msg.ganttCmds) ? "8px" : 0 }}>{formatMsg(msg.content || "")}</div>
+                      {msg.budgetCmds && <div style={TAG("#fef3c7", "#92400e")}>💰 התקציב עודכן ({msg.budgetCmds.length} {msg.budgetCmds.length === 1 ? "שינוי" : "שינויים"})</div>}
+                      <div style={{ marginTop: (msg.usedSearch || msg.ganttCmds || msg.budgetCmds) ? "8px" : 0 }}>{formatMsg(msg.content || "")}</div>
                     </>
                   ) : (
                     <>

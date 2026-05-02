@@ -17,6 +17,7 @@ import { formatMsg } from './ui/Markdown.jsx';
 // AI
 import { buildSystemPrompt } from './ai/system-prompt.js';
 import { parseGanttCommands, applyGanttCommandsToPhases } from './ai/gantt-commands.js';
+import { parseBudgetCommands, applyBudgetCommandsToBudget } from './ai/budget-commands.js';
 import { sendToProvider, sendToProviderSimple, createFetchWithTimeout, createSimpleFetch, extractText } from './ai/provider.js';
 
 // Core
@@ -48,6 +49,7 @@ function App() {
   const [projectStart, setProjectStart] = useStorage("myhouse-start-date", todayStr());
   const [ganttVersions, setGanttVersions] = useStorage("myhouse-gantt-versions", []);
   const [budget, setBudget] = useStorage("myhouse-budget", []);
+  const [budgetVersions, setBudgetVersions] = useStorage("myhouse-budget-versions", []);
   const [dailyLogs, setDailyLogs] = useStorage("myhouse-daily-logs", []);
   const [punchList, setPunchList] = useStorage("myhouse-punch-list", []);
 
@@ -71,6 +73,9 @@ function App() {
   const [ganttChat, setGanttChat] = useState([]);
   const [ganttInput, setGanttInput] = useState("");
   const [ganttLoading, setGanttLoading] = useState(false);
+  const [budgetChat, setBudgetChat] = useState([]);
+  const [budgetInput, setBudgetInput] = useState("");
+  const [budgetLoading, setBudgetLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [editBudget, setEditBudget] = useState(null);
@@ -245,7 +250,11 @@ function App() {
     if (budget.length) {
       const totalP = budget.reduce((s, b) => s + (b.planned || 0), 0);
       const totalA = budget.reduce((s, b) => s + (b.actual || 0), 0);
-      c += `\n--- תקציב ---\nסה"כ מתוכנן: ₪${totalP.toLocaleString()}, בפועל: ₪${totalA.toLocaleString()}, ${totalA <= totalP ? "בתקציב" : "חריגה של ₪" + (totalA - totalP).toLocaleString()}\n`;
+      c += `\n--- תקציב (סעיפים קיימים — השתמש בשמות בדיוק כמו כאן בפקודות BUDGET) ---\n`;
+      budget.forEach((b) => {
+        c += `${b.category}: מתוכנן ₪${(b.planned || 0).toLocaleString()}, בפועל ₪${(b.actual || 0).toLocaleString()}, שלב: ${b.phase || "-"}${b.notes ? `, הערות: ${b.notes}` : ""}\n`;
+      });
+      c += `סה"כ מתוכנן: ₪${totalP.toLocaleString()}, בפועל: ₪${totalA.toLocaleString()}, ${totalA <= totalP ? "בתקציב" : "חריגה של ₪" + (totalA - totalP).toLocaleString()}\n`;
     }
     if (documents.length) {
       c += "\n\n--- מסמכים שמורים ---\n";
@@ -260,9 +269,10 @@ function App() {
     return c;
   }, [knowledgeBase, phases, contractors, projectStart, budget, documents]);
 
-  /* ─── Shared: parse & apply Gantt commands ─── */
-  const applyGanttCommands = useCallback((aText) => {
-    const { cleanText, ganttCmds } = parseGanttCommands(aText);
+  /* ─── Shared: parse & apply Gantt + Budget commands ─── */
+  const applyAICommands = useCallback((aText) => {
+    const { cleanText: t1, ganttCmds } = parseGanttCommands(aText);
+    const { cleanText, budgetCmds } = parseBudgetCommands(t1);
 
     if (ganttCmds.length > 0) {
       setGanttVersions((prev) => [...prev.slice(-19), {
@@ -272,8 +282,16 @@ function App() {
       }]);
       setPhases((prev) => applyGanttCommandsToPhases(ganttCmds, prev));
     }
-    return { cleanText, ganttCmds };
-  }, [phases, setPhases, setGanttVersions]);
+    if (budgetCmds.length > 0) {
+      setBudgetVersions((prev) => [...prev.slice(-19), {
+        id: uid(), date: new Date().toLocaleString("he-IL"),
+        label: budgetCmds.map((c) => `${c.action}: ${c.params[0]}`).join(", "),
+        budget: JSON.parse(JSON.stringify(budget)),
+      }]);
+      setBudget((prev) => applyBudgetCommandsToBudget(budgetCmds, prev));
+    }
+    return { cleanText, ganttCmds, budgetCmds };
+  }, [phases, budget, setPhases, setBudget, setGanttVersions, setBudgetVersions]);
 
   const sendMessage = useCallback(async (text) => {
     if (!text.trim() && attachments.length === 0) return;
@@ -318,10 +336,14 @@ function App() {
         messages, userContent, fullText, curAttach, fetchWithTimeout,
       });
 
-      // Parse and apply Gantt commands from AI response
-      const { cleanText, ganttCmds } = applyGanttCommands(aText);
+      // Parse and apply Gantt + Budget commands from AI response
+      const { cleanText, ganttCmds, budgetCmds } = applyAICommands(aText);
 
-      const aMsg = { role: "assistant", content: cleanText, apiContent: aText, usedSearch, ganttCmds: ganttCmds.length > 0 ? ganttCmds : undefined };
+      const aMsg = {
+        role: "assistant", content: cleanText, apiContent: aText, usedSearch,
+        ganttCmds: ganttCmds.length > 0 ? ganttCmds : undefined,
+        budgetCmds: budgetCmds.length > 0 ? budgetCmds : undefined,
+      };
       setMessages([...newMsgs, aMsg]);
 
       // Auto-save as document
@@ -375,7 +397,7 @@ function App() {
       setMessages([...newMsgs, { role: "assistant", content: errMsg }]);
     }
     setLoading(false);
-  }, [attachments, messages, buildCtx, setDocuments, provider, activeKey, applyGanttCommands]);
+  }, [attachments, messages, buildCtx, setDocuments, provider, activeKey, applyAICommands]);
 
   /* ─── Gantt inline chat ─── */
   const sendGanttMessage = useCallback(async (text) => {
@@ -386,7 +408,7 @@ function App() {
     setGanttInput(""); setGanttLoading(true);
 
     try {
-      const sysPrompt = buildSystemPrompt() + "\n\n⚡ אתה עכשיו בצ'אט של עריכת גאנט. תשובות קצרות ולעניין. כשצריך שינוי - בצע אותו עם פקודות GANTT." + buildCtx();
+      const sysPrompt = buildSystemPrompt() + "\n\n⚡ אתה עכשיו בצ'אט של עריכת גאנט/תקציב. תשובות קצרות ולעניין. כשצריך שינוי - בצע אותו עם פקודות GANTT או BUDGET." + buildCtx();
       const chatHistory = ganttChat.filter((m) => !m.loading).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text }));
 
       const doFetch = createSimpleFetch(60000);
@@ -394,13 +416,46 @@ function App() {
         provider, apiKey: activeKey, systemPrompt: sysPrompt, chatHistory, text, doFetch,
       });
 
-      const { cleanText, ganttCmds } = applyGanttCommands(aText);
-      setGanttChat([...newChat, { role: "assistant", text: cleanText, ganttCmds: ganttCmds.length > 0 ? ganttCmds : undefined }]);
+      const { cleanText, ganttCmds, budgetCmds } = applyAICommands(aText);
+      setGanttChat([...newChat, {
+        role: "assistant", text: cleanText,
+        ganttCmds: ganttCmds.length > 0 ? ganttCmds : undefined,
+        budgetCmds: budgetCmds.length > 0 ? budgetCmds : undefined,
+      }]);
     } catch (e) {
       setGanttChat([...newChat, { role: "assistant", text: "❌ " + e.message }]);
     }
     setGanttLoading(false);
-  }, [ganttChat, ganttLoading, provider, activeKey, buildCtx, applyGanttCommands]);
+  }, [ganttChat, ganttLoading, provider, activeKey, buildCtx, applyAICommands]);
+
+  /* ─── Budget inline chat ─── */
+  const sendBudgetMessage = useCallback(async (text) => {
+    if (!text.trim() || budgetLoading) return;
+    const userMsg = { role: "user", text };
+    const newChat = [...budgetChat, userMsg];
+    setBudgetChat([...newChat, { role: "assistant", text: "", loading: true }]);
+    setBudgetInput(""); setBudgetLoading(true);
+
+    try {
+      const sysPrompt = buildSystemPrompt() + "\n\n⚡ אתה עכשיו בצ'אט של עריכת תקציב. תשובות קצרות ולעניין. כשצריך שינוי - בצע אותו עם פקודות BUDGET (ובמידת הצורך גם GANTT)." + buildCtx();
+      const chatHistory = budgetChat.filter((m) => !m.loading).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text }));
+
+      const doFetch = createSimpleFetch(60000);
+      const aText = await sendToProviderSimple({
+        provider, apiKey: activeKey, systemPrompt: sysPrompt, chatHistory, text, doFetch,
+      });
+
+      const { cleanText, ganttCmds, budgetCmds } = applyAICommands(aText);
+      setBudgetChat([...newChat, {
+        role: "assistant", text: cleanText,
+        ganttCmds: ganttCmds.length > 0 ? ganttCmds : undefined,
+        budgetCmds: budgetCmds.length > 0 ? budgetCmds : undefined,
+      }]);
+    } catch (e) {
+      setBudgetChat([...newChat, { role: "assistant", text: "❌ " + e.message }]);
+    }
+    setBudgetLoading(false);
+  }, [budgetChat, budgetLoading, provider, activeKey, buildCtx, applyAICommands]);
 
   const openWhatsApp = useCallback((phone, text) => {
     const c = phone.replace(/[^0-9]/g, "");
@@ -410,14 +465,14 @@ function App() {
 
   /* ═══ QUICK EXPORT ═══ */
   const quickExport = useCallback(() => {
-    const data = { version: 3, exportDate: new Date().toISOString(), knowledgeBase, phases, contractors, documents, projectStart, budget, dailyLogs, punchList };
+    const data = { version: 3, exportDate: new Date().toISOString(), knowledgeBase, phases, contractors, documents, projectStart, budget, budgetVersions, dailyLogs, punchList };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url;
     a.download = `backup-project-${new Date().toLocaleDateString("he-IL").replace(/\./g, "-")}.json`;
     a.click(); URL.revokeObjectURL(url);
     updateLastBackup();
-  }, [knowledgeBase, phases, contractors, documents, projectStart, budget, dailyLogs, punchList, updateLastBackup]);
+  }, [knowledgeBase, phases, contractors, documents, projectStart, budget, budgetVersions, dailyLogs, punchList, updateLastBackup]);
 
   // Backup age indicator
   const backupAge = lastBackup ? Math.floor((Date.now() - new Date(lastBackup).getTime()) / 86400000) : -1;
@@ -1173,7 +1228,12 @@ function App() {
         {/* ═══ BUDGET TAB ═══ */}
         {activeTab === "budget" && (
           <BudgetTab budget={budget} setBudget={setBudget} dashData={dashData}
-            phases={phases} setEditBudget={setEditBudget} />
+            phases={phases} setEditBudget={setEditBudget}
+            budgetChat={budgetChat} setBudgetChat={setBudgetChat}
+            budgetInput={budgetInput} setBudgetInput={setBudgetInput}
+            budgetLoading={budgetLoading}
+            sendBudgetMessage={sendBudgetMessage}
+            anthropicKey={anthropicKey} openaiKey={openaiKey} geminiKey={geminiKey} />
         )}
 
         {/* ═══ DAILY LOG TAB ═══ */}

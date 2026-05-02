@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { CARD, TAG, BTN, INP } from '../../ui/styles.js';
 import { formatDate, addDays, daysBetween, todayStr, clamp, uid } from '../../utils/dates.js';
 import { stColors, stLabels, stCycle, PHASES_TEMPLATE } from '../../utils/constants.js';
-import { formatMsg } from '../../ui/Markdown.jsx';
+import { InlineAIChat } from '../../ui/InlineAIChat.jsx';
 
 export function GanttTab({
   phases, setPhases, projectStart, setProjectStart,
@@ -15,8 +15,6 @@ export function GanttTab({
   const [showGanttHistory, setShowGanttHistory] = useState(false);
   const [dragPhaseId, setDragPhaseId] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
-  const ganttChatRef = useRef(null);
-  const ganttInputRef = useRef(null);
   const ganttScrollRef = useRef(null);
   const phaseRowRefs = useRef({});
 
@@ -52,13 +50,6 @@ export function GanttTab({
       }, 100);
     }
   }, [phases]);
-
-  // Auto-scroll gantt chat when messages change
-  useEffect(() => {
-    if (ganttChatRef.current) {
-      setTimeout(() => ganttChatRef.current?.scrollTo(0, ganttChatRef.current.scrollHeight), 50);
-    }
-  }, [ganttChat]);
 
   const initPhases = () => {
     let s = projectStart;
@@ -253,50 +244,17 @@ export function GanttTab({
       })()}
     </div>
 
-    {/* Gantt inline chat */}
-    <div style={{ borderTop: "2px solid #e5e5e5", background: "#fff", flexShrink: 0, display: "flex", flexDirection: "column", maxHeight: ganttChat.length > 0 ? "45%" : "auto" }}>
-      {ganttChat.length > 0 && (
-        <div ref={ganttChatRef} style={{ flex: 1, overflowY: "auto", padding: "8px 12px", minHeight: 0 }}>
-          {ganttChat.map((m, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", marginBottom: "4px" }}>
-              <div style={{
-                background: m.role === "user" ? "#1a3a4a" : m.loading ? "#f5f0eb" : "#f0faf5",
-                color: m.role === "user" ? "#fff" : "#2c2c2c",
-                borderRadius: m.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
-                padding: "8px 12px", maxWidth: "85%", fontSize: "12.5px", lineHeight: 1.5,
-              }}>
-                {m.loading ? <span style={{ color: "#999" }}>⏳ חושב...</span> : (
-                  <>
-                    {m.ganttCmds && <div style={{ ...TAG("#fef3c7", "#92400e"), marginBottom: "4px", fontSize: "10px" }}>📊 {m.ganttCmds.length} {m.ganttCmds.length === 1 ? "שינוי" : "שינויים"} בוצעו</div>}
-                    {formatMsg(m.text)}
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div style={{ display: "flex", gap: "6px", padding: "8px 12px", alignItems: "center", background: "#fafafa", borderTop: ganttChat.length > 0 ? "1px solid #eee" : "none" }}>
-        <div style={{ fontSize: "12px", color: "#2d8a6e", fontWeight: 700, flexShrink: 0 }}>📊</div>
-        <input
-          ref={ganttInputRef}
-          value={ganttInput}
-          onChange={(e) => setGanttInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendGanttMessage(ganttInput); } }}
-          placeholder='עדכן גאנט... (למשל: "הזז שלד לעוד שבועיים", "הוסף שלב בדיקות")'
-          disabled={ganttLoading || (!anthropicKey && !openaiKey && !geminiKey)}
-          style={{ ...INP, fontSize: "12.5px", padding: "8px 10px", borderRadius: "10px", border: "1.5px solid #e0e0e0" }}
-        />
-        <button
-          onClick={() => sendGanttMessage(ganttInput)}
-          disabled={ganttLoading || !ganttInput.trim()}
-          style={{ ...BTN(ganttLoading ? "#ccc" : "#2d8a6e"), fontSize: "13px", padding: "8px 14px", flexShrink: 0 }}
-        >{ganttLoading ? "⏳" : "🚀"}</button>
-        {ganttChat.length > 0 && (
-          <button onClick={() => setGanttChat([])} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "11px", color: "#999", flexShrink: 0 }} title="נקה צ'אט">✕</button>
-        )}
-      </div>
-    </div>
+    <InlineAIChat
+      chat={ganttChat}
+      setChat={setGanttChat}
+      input={ganttInput}
+      setInput={setGanttInput}
+      loading={ganttLoading}
+      send={sendGanttMessage}
+      placeholder='עדכן גאנט או תקציב... (למשל: "הזז שלד לעוד שבועיים", "הוסף סעיף תקציב לחשמל 18000")'
+      disabled={!anthropicKey && !openaiKey && !geminiKey}
+      icon="📊"
+    />
     </div>
   );
 }
